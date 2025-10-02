@@ -1,0 +1,67 @@
+[package]
+name = "office-sdk"
+version = "0.1.0"
+edition = "2024"
+authors = ["Your Name <your.email@example.com>"]
+description = "A Rust SDK and CLI for creating and parsing Office formats (DOCX, XLSX, PPTX, PDF, EML) with Markdown conversion"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/your-username/office-sdk"
+keywords = ["office", "docx", "xlsx", "pptx", "pdf", "eml"]
+categories = ["parser-implementations", "encoding"]
+
+[dependencies]
+zip = "0.6"
+quick-xml = "0.36"
+serde = { version = "1.0", features = ["derive"] }
+serde-xml-rs = "0.6"
+thiserror = "1.0"
+anyhow = "1.0"
+pulldown-cmark = "0.10"
+regex = "1.10"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+image = "0.25"
+uuid = { version = "1.0", features = ["v4"] }
+printpdf = "0.7"
+lopdf = "0.33"
+pdf-writer = "0.9"
+md5 = "0.7"
+clap = { version = "4.4", features = ["derive", "color", "suggestions"] }
+serde_json = "1.0"
+walkdir = "2.4"
+indicatif = "0.17"
+console = "0.15"
+dialoguer = "0.11"
+colored = "2.1"
+dirs = "5.0"
+lettre = "0.11"
+mail-parser = "0.9"
+mime = "0.3"
+time = "0.3"
+tokio = { version = "1.0", features = ["full"] }
+warp = "0.3"
+bytes = "1.0"
+futures-util = "0.3"
+
+[[bin]]
+name = "office-cli"
+path = "src/bin/office-cli-simple.rs"
+
+[[bin]]
+name = "office-api-server"
+path = "src/bin/api-server.rs"
+
+[[bin]]
+name = "simple-api-server"
+path = "src/bin/simple-api-server.rs"
+
+[[bin]]
+name = "standalone-api"
+path = "src/bin/standalone-api.rs"
+
+[[bin]]
+name = "minimal-api"
+path = "src/bin/minimal-api.rs"
+
+[dev-dependencies]
+tempfile = "3.0"

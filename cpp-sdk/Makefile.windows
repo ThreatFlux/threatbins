@@ -1,0 +1,87 @@
+# C++ SDK Makefile for Windows (MinGW/MSYS2)
+CXX = g++
+CXXFLAGS = -std=c++17 -Wall -Wextra -O2 -static-libgcc -static-libstdc++
+SRCDIR = src
+BUILDDIR = build
+INCLUDEDIR = include
+PLATFORM = windows
+
+# Source files
+SOURCES = $(wildcard $(SRCDIR)/*.cpp)
+OBJECTS = $(SOURCES:$(SRCDIR)/%.cpp=$(BUILDDIR)/%.o)
+
+# Target executable
+TARGET = $(BUILDDIR)/cpp-sdk-$(PLATFORM).exe
+
+# Default target
+all: $(TARGET)
+
+# Create build directory if it doesn't exist (Windows compatible)
+$(BUILDDIR):
+	if not exist "$(BUILDDIR)" mkdir "$(BUILDDIR)"
+
+# Link the executable
+$(TARGET): $(OBJECTS) | $(BUILDDIR)
+	$(CXX) $(OBJECTS) -o $@
+
+# Compile source files to object files
+$(BUILDDIR)/%.o: $(SRCDIR)/%.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -I$(INCLUDEDIR) -c $< -o $@
+
+# Clean build files (Windows compatible)
+clean:
+	if exist "$(BUILDDIR)" rmdir /s /q "$(BUILDDIR)"
+	mkdir "$(BUILDDIR)"
+
+# Rebuild everything
+rebuild: clean all
+
+# Install (copy to system PATH - requires admin)
+install: $(TARGET)
+	copy "$(TARGET)" "C:\Windows\System32\cpp-sdk.exe"
+
+# Uninstall
+uninstall:
+	del "C:\Windows\System32\cpp-sdk.exe"
+
+# Run the program
+run: $(TARGET)
+	$(TARGET)
+
+# Run with custom input
+run-custom: $(TARGET)
+	$(TARGET) "Custom hello world message"
+
+# Ping 1.1.1.1
+ping: $(TARGET)
+	$(TARGET) --ping
+
+# Ping Google DNS
+ping-google: $(TARGET)
+	$(TARGET) --ping 8.8.8.8
+
+# Show platform info
+platform-info: $(TARGET)
+	$(TARGET) --platform
+
+# Show application help
+app-help: $(TARGET)
+	$(TARGET) --help
+
+# Help
+help:
+	@echo Available targets for Windows:
+	@echo   all       - Build the executable
+	@echo   clean     - Remove build files
+	@echo   rebuild   - Clean and build
+	@echo   install   - Install to system (requires admin)
+	@echo   uninstall - Remove from system (requires admin)
+	@echo   run       - Run with default message
+	@echo   run-custom- Run with custom message
+	@echo   ping      - Ping 1.1.1.1 (Cloudflare DNS)
+	@echo   ping-google- Ping 8.8.8.8 (Google DNS)
+	@echo   platform-info - Show platform information
+	@echo   app-help  - Show application help
+	@echo   help      - Show this help
+
+.PHONY: all clean rebuild install uninstall run run-custom ping ping-google platform-info app-help help

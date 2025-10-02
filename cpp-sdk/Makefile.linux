@@ -1,0 +1,105 @@
+# C++ SDK Makefile for Linux
+CXX = g++
+CXXFLAGS = -std=c++17 -Wall -Wextra -O2
+SRCDIR = src
+BUILDDIR = build
+INCLUDEDIR = include
+PLATFORM = linux
+
+# Source files
+SOURCES = $(wildcard $(SRCDIR)/*.cpp)
+OBJECTS = $(SOURCES:$(SRCDIR)/%.cpp=$(BUILDDIR)/%.o)
+
+# Target executable
+TARGET = $(BUILDDIR)/cpp-sdk-$(PLATFORM)
+
+# Default target
+all: $(TARGET)
+
+# Create build directory if it doesn't exist
+$(BUILDDIR):
+	mkdir -p $(BUILDDIR)
+
+# Link the executable
+$(TARGET): $(OBJECTS) | $(BUILDDIR)
+	$(CXX) $(OBJECTS) -o $@
+
+# Compile source files to object files
+$(BUILDDIR)/%.o: $(SRCDIR)/%.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -I$(INCLUDEDIR) -c $< -o $@
+
+# Clean build files
+clean:
+	rm -rf $(BUILDDIR)/*
+
+# Rebuild everything
+rebuild: clean all
+
+# Install (copy to /usr/local/bin)
+install: $(TARGET)
+	sudo cp $(TARGET) /usr/local/bin/cpp-sdk
+
+# Uninstall
+uninstall:
+	sudo rm -f /usr/local/bin/cpp-sdk
+
+# Run the program
+run: $(TARGET)
+	./$(TARGET)
+
+# Run with custom input
+run-custom: $(TARGET)
+	./$(TARGET) "Custom hello world message"
+
+# Ping 1.1.1.1
+ping: $(TARGET)
+	./$(TARGET) --ping
+
+# Ping Google DNS
+ping-google: $(TARGET)
+	./$(TARGET) --ping 8.8.8.8
+
+# Show platform info
+platform-info: $(TARGET)
+	./$(TARGET) --platform
+
+# Show application help
+app-help: $(TARGET)
+	./$(TARGET) --help
+
+# Test base64 encoding
+test-encode: $(TARGET)
+	./$(TARGET) --encode "Hello Base64 World"
+
+# Test base64 decoding
+test-decode: $(TARGET)
+	./$(TARGET) --decode "SGVsbG8gQmFzZTY0IFdvcmxk"
+
+# Test auto-decode with base64 input
+test-auto-decode: $(TARGET)
+	@echo "Testing auto-decode with base64 string:"
+	./$(TARGET) "SGVsbG8gZnJvbSBCYXNlNjQh"
+	@echo ""
+	@echo "Testing with regular text:"
+	./$(TARGET) "Regular text message"
+
+# Help
+help:
+	@echo "Available targets for Linux:"
+	@echo "  all       - Build the executable"
+	@echo "  clean     - Remove build files"
+	@echo "  rebuild   - Clean and build"
+	@echo "  install   - Install to system"
+	@echo "  uninstall - Remove from system"
+	@echo "  run       - Run with default message"
+	@echo "  run-custom- Run with custom message"
+	@echo "  ping      - Ping 1.1.1.1 (Cloudflare DNS)"
+	@echo "  ping-google- Ping 8.8.8.8 (Google DNS)"
+	@echo "  platform-info - Show platform information"
+	@echo "  app-help  - Show application help"
+	@echo "  test-encode - Test base64 encoding"
+	@echo "  test-decode - Test base64 decoding"
+	@echo "  test-auto-decode - Test auto-decode feature"
+	@echo "  help      - Show this help"
+
+.PHONY: all clean rebuild install uninstall run run-custom ping ping-google platform-info app-help test-encode test-decode test-auto-decode help

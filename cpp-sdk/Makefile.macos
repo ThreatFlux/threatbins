@@ -1,0 +1,99 @@
+# C++ SDK Makefile for macOS
+CXX = clang++
+CXXFLAGS = -std=c++17 -Wall -Wextra -O2 -arch x86_64 -arch arm64
+SRCDIR = src
+BUILDDIR = build
+INCLUDEDIR = include
+PLATFORM = macos
+
+# Source files
+SOURCES = $(wildcard $(SRCDIR)/*.cpp)
+OBJECTS = $(SOURCES:$(SRCDIR)/%.cpp=$(BUILDDIR)/%.o)
+
+# Target executable
+TARGET = $(BUILDDIR)/cpp-sdk-$(PLATFORM)
+
+# Default target
+all: $(TARGET)
+
+# Create build directory if it doesn't exist
+$(BUILDDIR):
+	mkdir -p $(BUILDDIR)
+
+# Link the executable (Universal binary for Intel and Apple Silicon)
+$(TARGET): $(OBJECTS) | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) $(OBJECTS) -o $@
+
+# Compile source files to object files
+$(BUILDDIR)/%.o: $(SRCDIR)/%.cpp | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -I$(INCLUDEDIR) -c $< -o $@
+
+# Clean build files
+clean:
+	rm -rf $(BUILDDIR)/*
+
+# Rebuild everything
+rebuild: clean all
+
+# Install (copy to /usr/local/bin)
+install: $(TARGET)
+	sudo cp $(TARGET) /usr/local/bin/cpp-sdk
+
+# Uninstall
+uninstall:
+	sudo rm -f /usr/local/bin/cpp-sdk
+
+# Run the program
+run: $(TARGET)
+	./$(TARGET)
+
+# Run with custom input
+run-custom: $(TARGET)
+	./$(TARGET) "Custom hello world message"
+
+# Ping 1.1.1.1
+ping: $(TARGET)
+	./$(TARGET) --ping
+
+# Ping Google DNS
+ping-google: $(TARGET)
+	./$(TARGET) --ping 8.8.8.8
+
+# Show platform info
+platform-info: $(TARGET)
+	./$(TARGET) --platform
+
+# Show application help
+app-help: $(TARGET)
+	./$(TARGET) --help
+
+# Create application bundle (optional)
+bundle: $(TARGET)
+	mkdir -p cpp-sdk.app/Contents/MacOS
+	mkdir -p cpp-sdk.app/Contents/Resources
+	cp $(TARGET) cpp-sdk.app/Contents/MacOS/cpp-sdk
+	echo '<?xml version="1.0" encoding="UTF-8"?>' > cpp-sdk.app/Contents/Info.plist
+	echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> cpp-sdk.app/Contents/Info.plist
+	echo '<plist version="1.0"><dict>' >> cpp-sdk.app/Contents/Info.plist
+	echo '<key>CFBundleExecutable</key><string>cpp-sdk</string>' >> cpp-sdk.app/Contents/Info.plist
+	echo '<key>CFBundleIdentifier</key><string>com.example.cpp-sdk</string>' >> cpp-sdk.app/Contents/Info.plist
+	echo '<key>CFBundleVersion</key><string>1.0</string></dict></plist>' >> cpp-sdk.app/Contents/Info.plist
+
+# Help
+help:
+	@echo "Available targets for macOS:"
+	@echo "  all       - Build universal binary (Intel + Apple Silicon)"
+	@echo "  clean     - Remove build files"
+	@echo "  rebuild   - Clean and build"
+	@echo "  install   - Install to system"
+	@echo "  uninstall - Remove from system"
+	@echo "  run       - Run with default message"
+	@echo "  run-custom- Run with custom message"
+	@echo "  ping      - Ping 1.1.1.1 (Cloudflare DNS)"
+	@echo "  ping-google- Ping 8.8.8.8 (Google DNS)"
+	@echo "  platform-info - Show platform information"
+	@echo "  app-help  - Show application help"
+	@echo "  bundle    - Create macOS app bundle"
+	@echo "  help      - Show this help"
+
+.PHONY: all clean rebuild install uninstall run run-custom ping ping-google platform-info app-help bundle help
