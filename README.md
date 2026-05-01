@@ -38,7 +38,7 @@ threatbins/
 
 ### Prerequisites
 
-- Rust 1.70 or higher
+- Rust 1.95.0 or higher
 - Cargo (Rust package manager)
 
 ### Installation
