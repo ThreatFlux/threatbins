@@ -278,7 +278,8 @@ impl XlsxDocument {
                     _ => {}
                 },
                 Ok(Event::Text(e)) if in_cell_value => {
-                    let text = e.unescape().unwrap().to_string();
+                    let decoded = e.decode().unwrap();
+                    let text = quick_xml::escape::unescape(&decoded).unwrap().into_owned();
                     current_row.push(text);
                 }
                 Ok(Event::End(ref e)) => match e.name().as_ref() {
@@ -699,7 +700,8 @@ impl XlsxDocument {
                     current_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 }
                 Ok(Event::Text(e)) => {
-                    let text = e.unescape().unwrap().to_string();
+                    let decoded = e.decode().unwrap();
+                    let text = quick_xml::escape::unescape(&decoded).unwrap().into_owned();
                     match current_element.as_str() {
                         "creator" => author = text,
                         "title" => title = text,

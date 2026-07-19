@@ -491,7 +491,7 @@ impl PptxDocument {
             </p:sp>"#,
                 i + 3,
                 i + 1,
-                quick_xml::escape::escape(text)
+                quick_xml::escape::escape(*text)
             ));
         }
 
@@ -525,7 +525,8 @@ impl PptxDocument {
                     current_text.clear();
                 }
                 Ok(Event::Text(e)) if in_text => {
-                    let text = e.unescape().unwrap().to_string();
+                    let decoded = e.decode().unwrap();
+                    let text = quick_xml::escape::unescape(&decoded).unwrap().into_owned();
                     current_text.push_str(&text);
                 }
                 Ok(Event::End(ref e)) if e.name().as_ref() == b"a:t" => {
@@ -1118,7 +1119,8 @@ impl PptxDocument {
                     current_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 }
                 Ok(Event::Text(e)) => {
-                    let text = e.unescape().unwrap().to_string();
+                    let decoded = e.decode().unwrap();
+                    let text = quick_xml::escape::unescape(&decoded).unwrap().into_owned();
                     match current_element.as_str() {
                         "creator" => author = text,
                         "title" => title = text,

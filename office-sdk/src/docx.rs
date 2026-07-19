@@ -692,7 +692,9 @@ impl DocxDocument {
                     in_text = true;
                 }
                 Ok(Event::Text(e)) if in_text => {
-                    text_content.push_str(&e.unescape().unwrap());
+                    let decoded = e.decode().unwrap();
+                    let text = quick_xml::escape::unescape(&decoded).unwrap();
+                    text_content.push_str(&text);
                     text_content.push(' ');
                 }
                 Ok(Event::End(ref e)) if e.name().as_ref() == b"w:t" => {
