@@ -1,6 +1,6 @@
 use crate::OfficeDocument;
 use crate::error::{OfficeError, Result};
-use crate::utils::{read_zip_entry, validate_office_format};
+use crate::utils::{decode_xml_reference, decode_xml_text, read_zip_entry, validate_office_format};
 use chrono::{DateTime, Utc};
 use quick_xml::{Reader, events::Event};
 use std::collections::HashMap;
@@ -245,14 +245,14 @@ impl XlsxDocument {
 
     fn parse_worksheet_data(&self, worksheet_xml: &str) -> Result<Vec<Vec<String>>> {
         let mut reader = Reader::from_str(worksheet_xml);
-        reader.config_mut().trim_text(true);
+        reader.config_mut().trim_text(false);
 
         let mut buf = Vec::new();
         let mut data = Vec::new();
         let mut current_row = Vec::new();
         let mut current_row_num = 0;
         let mut in_cell_value = false;
-        let mut _in_text = false;
+        let mut current_cell_value = String::new();
 
         loop {
             match reader.read_event_into(&mut buf) {
@@ -273,14 +273,15 @@ impl XlsxDocument {
                     }
                     b"v" | b"t" => {
                         in_cell_value = true;
-                        _in_text = e.name().as_ref() == b"t";
+                        current_cell_value.clear();
                     }
                     _ => {}
                 },
                 Ok(Event::Text(e)) if in_cell_value => {
-                    let decoded = e.decode().unwrap();
-                    let text = quick_xml::escape::unescape(&decoded).unwrap().into_owned();
-                    current_row.push(text);
+                    current_cell_value.push_str(&decode_xml_text(&e)?);
+                }
+                Ok(Event::GeneralRef(reference)) if in_cell_value => {
+                    current_cell_value.push_str(&decode_xml_reference(&reference)?);
                 }
                 Ok(Event::End(ref e)) => match e.name().as_ref() {
                     b"row" => {
@@ -290,8 +291,8 @@ impl XlsxDocument {
                         data[current_row_num] = current_row.clone();
                     }
                     b"v" | b"t" => {
+                        current_row.push(std::mem::take(&mut current_cell_value));
                         in_cell_value = false;
-                        _in_text = false;
                     }
                     _ => {}
                 },
@@ -679,10 +680,11 @@ impl XlsxDocument {
         u32,
     )> {
         let mut reader = Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
+        reader.config_mut().trim_text(false);
 
         let mut buf = Vec::new();
         let mut current_element = String::new();
+        let mut current_text = String::new();
         let mut author = "Office SDK".to_string();
         let mut title = "New Spreadsheet".to_string();
         let mut subject = "".to_string();
@@ -697,11 +699,17 @@ impl XlsxDocument {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => {
-                    current_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    current_element = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                    current_text.clear();
                 }
                 Ok(Event::Text(e)) => {
-                    let decoded = e.decode().unwrap();
-                    let text = quick_xml::escape::unescape(&decoded).unwrap().into_owned();
+                    current_text.push_str(&decode_xml_text(&e)?);
+                }
+                Ok(Event::GeneralRef(reference)) => {
+                    current_text.push_str(&decode_xml_reference(&reference)?);
+                }
+                Ok(Event::End(_)) => {
+                    let text = current_text.trim().to_string();
                     match current_element.as_str() {
                         "creator" => author = text,
                         "title" => title = text,
@@ -727,9 +735,8 @@ impl XlsxDocument {
                         }
                         _ => {}
                     }
-                }
-                Ok(Event::End(_)) => {
                     current_element.clear();
+                    current_text.clear();
                 }
                 Ok(Event::Eof) => break,
                 Err(e) => return Err(OfficeError::XmlParsing(e)),
@@ -750,6 +757,37 @@ impl XlsxDocument {
             last_modified_by,
             revision,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worksheet_cells_preserve_xml_references() {
+        let mut document = XlsxDocument::new();
+        document.worksheets.insert(
+            "entities".to_string(),
+            "<worksheet><sheetData><row r=\"1\"><c><v>Fish &amp; Chips &#33;</v></c></row></sheetData></worksheet>"
+                .to_string(),
+        );
+
+        assert_eq!(
+            document.get_worksheet_data("entities").unwrap(),
+            vec![vec!["Fish & Chips !".to_string()]]
+        );
+    }
+
+    #[test]
+    fn core_properties_use_local_names_and_preserve_references() {
+        let properties = XlsxDocument::parse_core_properties(
+            "<cp:coreProperties><dc:creator>A &amp; B</dc:creator><dc:title>Title &#38; More</dc:title></cp:coreProperties>",
+        )
+        .unwrap();
+
+        assert_eq!(properties.0, "A & B");
+        assert_eq!(properties.1, "Title & More");
     }
 }
 

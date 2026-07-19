@@ -1,6 +1,28 @@
 use crate::error::{OfficeError, Result};
+use quick_xml::events::{BytesRef, BytesText};
 use std::io::Read;
 use zip::ZipArchive;
+
+/// Decodes a text event and maps malformed XML into the SDK error type.
+pub(crate) fn decode_xml_text(text: &BytesText<'_>) -> Result<String> {
+    let decoded = text
+        .decode()
+        .map_err(|error| OfficeError::XmlParsing(error.into()))?;
+    quick_xml::escape::unescape(&decoded)
+        .map(|text| text.into_owned())
+        .map_err(|error| OfficeError::XmlParsing(error.into()))
+}
+
+/// Resolves a predefined or numeric XML reference emitted as a separate event.
+pub(crate) fn decode_xml_reference(reference: &BytesRef<'_>) -> Result<String> {
+    let reference = reference
+        .decode()
+        .map_err(|error| OfficeError::XmlParsing(error.into()))?;
+    let escaped = format!("&{reference};");
+    quick_xml::escape::unescape(&escaped)
+        .map(|text| text.into_owned())
+        .map_err(|error| OfficeError::XmlParsing(error.into()))
+}
 
 pub fn read_zip_entry<R: Read + std::io::Seek>(
     archive: &mut ZipArchive<R>,

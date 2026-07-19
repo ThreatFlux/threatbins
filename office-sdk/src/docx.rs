@@ -1,6 +1,6 @@
 use crate::OfficeDocument;
 use crate::error::{OfficeError, Result};
-use crate::utils::{read_zip_entry, validate_office_format};
+use crate::utils::{decode_xml_reference, decode_xml_text, read_zip_entry, validate_office_format};
 use chrono::{DateTime, Utc};
 use quick_xml::{Reader, events::Event};
 use serde::{Deserialize, Serialize};
@@ -680,7 +680,7 @@ impl DocxDocument {
 
     pub fn get_text(&self) -> Result<String> {
         let mut reader = Reader::from_str(&self.content);
-        reader.config_mut().trim_text(true);
+        reader.config_mut().trim_text(false);
 
         let mut buf = Vec::new();
         let mut text_content = String::new();
@@ -692,13 +692,14 @@ impl DocxDocument {
                     in_text = true;
                 }
                 Ok(Event::Text(e)) if in_text => {
-                    let decoded = e.decode().unwrap();
-                    let text = quick_xml::escape::unescape(&decoded).unwrap();
-                    text_content.push_str(&text);
-                    text_content.push(' ');
+                    text_content.push_str(&decode_xml_text(&e)?);
+                }
+                Ok(Event::GeneralRef(reference)) if in_text => {
+                    text_content.push_str(&decode_xml_reference(&reference)?);
                 }
                 Ok(Event::End(ref e)) if e.name().as_ref() == b"w:t" => {
                     in_text = false;
+                    text_content.push(' ');
                 }
                 Ok(Event::Eof) => break,
                 Err(e) => return Err(OfficeError::XmlParsing(e)),
@@ -1170,5 +1171,33 @@ impl OfficeDocument for DocxDocument {
         let data = self.to_bytes()?;
         fs::write(path, data)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn xml_references_are_preserved_in_text() {
+        let mut document = DocxDocument::new();
+        document.content =
+            "<w:document><w:body><w:p><w:r><w:t>Fish &amp; Chips &#33;</w:t></w:r></w:p></w:body></w:document>"
+                .to_string();
+
+        assert_eq!(document.get_text().unwrap(), "Fish & Chips !");
+    }
+
+    #[test]
+    fn malformed_xml_entity_returns_error() {
+        let mut document = DocxDocument::new();
+        document.content =
+            "<w:document><w:body><w:p><w:r><w:t>&unknown;</w:t></w:r></w:p></w:body></w:document>"
+                .to_string();
+
+        assert!(matches!(
+            document.get_text(),
+            Err(OfficeError::XmlParsing(_))
+        ));
     }
 }
