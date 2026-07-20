@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "✓ Create and parse Office documents",
             "✓ Memory-efficient ZIP-based processing",
             "✓ Type-safe APIs with comprehensive error handling",
-            "✓ Built with Rust 1.89.0",
+            "✓ Built with Rust 1.95.0",
         ],
     )?;
 

@@ -1,6 +1,6 @@
 use crate::OfficeDocument;
 use crate::error::{OfficeError, Result};
-use crate::utils::{read_zip_entry, validate_office_format};
+use crate::utils::{decode_xml_reference, decode_xml_text, read_zip_entry, validate_office_format};
 use chrono::{DateTime, Utc};
 use image::ImageReader;
 use quick_xml::{Reader, events::Event};
@@ -491,7 +491,7 @@ impl PptxDocument {
             </p:sp>"#,
                 i + 3,
                 i + 1,
-                quick_xml::escape::escape(text)
+                quick_xml::escape::escape(*text)
             ));
         }
 
@@ -510,7 +510,7 @@ impl PptxDocument {
 
     fn parse_slide_xml(&self, slide_id: &str, slide_xml: &str) -> Result<Slide> {
         let mut reader = Reader::from_str(slide_xml);
-        reader.config_mut().trim_text(true);
+        reader.config_mut().trim_text(false);
 
         let mut buf = Vec::new();
         let mut all_text = Vec::new();
@@ -525,8 +525,10 @@ impl PptxDocument {
                     current_text.clear();
                 }
                 Ok(Event::Text(e)) if in_text => {
-                    let text = e.unescape().unwrap().to_string();
-                    current_text.push_str(&text);
+                    current_text.push_str(&decode_xml_text(&e)?);
+                }
+                Ok(Event::GeneralRef(reference)) if in_text => {
+                    current_text.push_str(&decode_xml_reference(&reference)?);
                 }
                 Ok(Event::End(ref e)) if e.name().as_ref() == b"a:t" => {
                     in_text = false;
@@ -1097,10 +1099,11 @@ impl PptxDocument {
         u32,
     )> {
         let mut reader = Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
+        reader.config_mut().trim_text(false);
 
         let mut buf = Vec::new();
         let mut current_element = String::new();
+        let mut current_text = String::new();
         let mut author = "Office SDK".to_string();
         let mut title = "New Presentation".to_string();
         let mut subject = "".to_string();
@@ -1115,10 +1118,17 @@ impl PptxDocument {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => {
-                    current_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    current_element = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                    current_text.clear();
                 }
                 Ok(Event::Text(e)) => {
-                    let text = e.unescape().unwrap().to_string();
+                    current_text.push_str(&decode_xml_text(&e)?);
+                }
+                Ok(Event::GeneralRef(reference)) => {
+                    current_text.push_str(&decode_xml_reference(&reference)?);
+                }
+                Ok(Event::End(_)) => {
+                    let text = current_text.trim().to_string();
                     match current_element.as_str() {
                         "creator" => author = text,
                         "title" => title = text,
@@ -1144,9 +1154,8 @@ impl PptxDocument {
                         }
                         _ => {}
                     }
-                }
-                Ok(Event::End(_)) => {
                     current_element.clear();
+                    current_text.clear();
                 }
                 Ok(Event::Eof) => break,
                 Err(e) => return Err(OfficeError::XmlParsing(e)),
@@ -1215,6 +1224,35 @@ impl PptxDocument {
 </p:notes>"#,
             quick_xml::escape::escape(notes_text)
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slide_text_preserves_xml_references() {
+        let mut document = PptxDocument::new();
+        document.slides.insert(
+            "slide1".to_string(),
+            "<p:sld><p:ph type=\"ctrTitle\"/><a:t>Title &amp; More</a:t><a:t>Fish &#38; Chips</a:t></p:sld>".to_string(),
+        );
+
+        let slide = document.get_slide_content("slide1").unwrap();
+        assert_eq!(slide.title, "Title & More");
+        assert_eq!(slide.content, vec!["Fish & Chips"]);
+    }
+
+    #[test]
+    fn core_properties_use_local_names_and_preserve_references() {
+        let properties = PptxDocument::parse_core_properties(
+            "<cp:coreProperties><dc:creator>A &amp; B</dc:creator><dc:title>Title &#38; More</dc:title></cp:coreProperties>",
+        )
+        .unwrap();
+
+        assert_eq!(properties.0, "A & B");
+        assert_eq!(properties.1, "Title & More");
     }
 }
 

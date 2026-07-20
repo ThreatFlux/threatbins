@@ -14,7 +14,7 @@ A Rust SDK for creating and parsing Microsoft Office compressed formats (DOCX, X
 - ✅ **XLSX Spreadsheets** with full functionality
 - ✅ **PPTX Presentations** with slide management
 - ✅ **Markdown ↔ DOCX conversion** (bidirectional)
-- ✅ Built on stable Rust 1.89.0
+- ✅ Built on stable Rust 1.95.0
 - ✅ Memory-efficient ZIP-based implementation
 - ✅ Comprehensive error handling
 - ✅ Type-safe APIs
@@ -349,7 +349,7 @@ Planned:
 
 ## Requirements
 
-- Rust 1.89.0 or later
+- Rust 1.95.0 or later
 - Standard library support for file I/O
 
 ## License

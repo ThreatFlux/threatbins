@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use printpdf::*;
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufWriter, Cursor};
+use std::io::Cursor;
 use std::path::Path;
 use uuid::Uuid;
 
@@ -2452,54 +2452,41 @@ impl OfficeDocument for PdfDocument {
     }
 
     fn to_bytes(&self) -> Result<Vec<u8>> {
-        if self.pages.is_empty() {
-            return Err(OfficeError::InvalidFormat(
-                "Cannot create PDF with no pages".to_string(),
-            ));
+        fn text_operations(text: &str, x: f64, y: f64, size: f64, color: &Color) -> Vec<Op> {
+            vec![
+                Op::SaveGraphicsState,
+                Op::StartTextSection,
+                Op::SetTextCursor {
+                    pos: Point::new(Mm(x as f32 * 0.352778), Mm(y as f32 * 0.352778)),
+                },
+                Op::SetFont {
+                    font: PdfFontHandle::Builtin(BuiltinFont::Helvetica),
+                    size: Pt(size as f32),
+                },
+                Op::SetFillColor {
+                    col: color.to_printpdf_color(),
+                },
+                Op::ShowText {
+                    items: vec![TextItem::Text(text.to_string())],
+                },
+                Op::EndTextSection,
+                Op::RestoreGraphicsState,
+            ]
         }
 
-        // Create PDF using printpdf with proper API
-        let (doc, page1, layer1) = printpdf::PdfDocument::new(
-            &self.title,
-            Mm(self.pages[0].width as f32 * 0.352778),
-            Mm(self.pages[0].height as f32 * 0.352778),
-            "Layer 1",
-        );
+        fn page_operations(page: &PdfPageInfo) -> Vec<Op> {
+            let mut operations = Vec::new();
 
-        // Get the current layer for the first page
-        let current_layer = doc.get_page(page1).get_layer(layer1);
-
-        // Add content from first page
-        if let Some(first_page) = self.pages.first() {
-            for content in &first_page.content {
+            for content in &page.content {
                 match content {
                     PageContent::Text {
-                        content: text,
+                        content,
                         x,
                         y,
                         size,
                         color,
                         ..
-                    } => {
-                        // Add builtin font (we'll enhance this later)
-                        let font = doc.add_builtin_font(BuiltinFont::Helvetica).map_err(|e| {
-                            OfficeError::InvalidFormat(format!("Font error: {}", e))
-                        })?;
-
-                        // Convert coordinates to Mm and add text
-                        current_layer.use_text(
-                            text.clone(),
-                            *size as f32,
-                            Mm(*x as f32 * 0.352778),
-                            Mm(*y as f32 * 0.352778),
-                            &font,
-                        );
-
-                        // Set text color if not black
-                        if color.r != 0.0 || color.g != 0.0 || color.b != 0.0 {
-                            current_layer.set_fill_color(color.to_printpdf_color());
-                        }
-                    }
+                    } => operations.extend(text_operations(content, *x, *y, *size, color)),
                     PageContent::Shape {
                         shape_type: ShapeType::Rectangle,
                         x,
@@ -2508,51 +2495,64 @@ impl OfficeDocument for PdfDocument {
                         height,
                         fill_color,
                         stroke_color,
+                        stroke_width,
                         ..
                     } => {
-                        // Create rectangle using line operations
                         let points = vec![
-                            (
-                                Point::new(Mm(*x as f32 * 0.352778), Mm(*y as f32 * 0.352778)),
-                                false,
-                            ),
-                            (
-                                Point::new(
+                            LinePoint {
+                                p: Point::new(Mm(*x as f32 * 0.352778), Mm(*y as f32 * 0.352778)),
+                                bezier: false,
+                            },
+                            LinePoint {
+                                p: Point::new(
                                     Mm((*x + *width) as f32 * 0.352778),
                                     Mm(*y as f32 * 0.352778),
                                 ),
-                                false,
-                            ),
-                            (
-                                Point::new(
+                                bezier: false,
+                            },
+                            LinePoint {
+                                p: Point::new(
                                     Mm((*x + *width) as f32 * 0.352778),
                                     Mm((*y + *height) as f32 * 0.352778),
                                 ),
-                                false,
-                            ),
-                            (
-                                Point::new(
+                                bezier: false,
+                            },
+                            LinePoint {
+                                p: Point::new(
                                     Mm(*x as f32 * 0.352778),
                                     Mm((*y + *height) as f32 * 0.352778),
                                 ),
-                                false,
-                            ),
+                                bezier: false,
+                            },
                         ];
-
-                        let line = Line {
-                            points,
-                            is_closed: true,
+                        let mode = match (fill_color.is_some(), stroke_color.is_some()) {
+                            (true, true) => PaintMode::FillStroke,
+                            (true, false) => PaintMode::Fill,
+                            _ => PaintMode::Stroke,
                         };
 
-                        // Set colors if specified
+                        operations.push(Op::SaveGraphicsState);
                         if let Some(fill) = fill_color {
-                            current_layer.set_fill_color(fill.to_printpdf_color());
+                            operations.push(Op::SetFillColor {
+                                col: fill.to_printpdf_color(),
+                            });
                         }
                         if let Some(stroke) = stroke_color {
-                            current_layer.set_outline_color(stroke.to_printpdf_color());
+                            operations.push(Op::SetOutlineColor {
+                                col: stroke.to_printpdf_color(),
+                            });
                         }
-
-                        current_layer.add_line(line);
+                        operations.push(Op::SetOutlineThickness {
+                            pt: Pt(*stroke_width as f32),
+                        });
+                        operations.push(Op::DrawPolygon {
+                            polygon: Polygon {
+                                rings: vec![PolygonRing { points }],
+                                mode,
+                                winding_order: WindingOrder::NonZero,
+                            },
+                        });
+                        operations.push(Op::RestoreGraphicsState);
                     }
                     PageContent::Line {
                         start_x,
@@ -2560,119 +2560,97 @@ impl OfficeDocument for PdfDocument {
                         end_x,
                         end_y,
                         color,
+                        width,
                         ..
                     } => {
-                        let points = vec![
-                            (
-                                Point::new(
-                                    Mm(*start_x as f32 * 0.352778),
-                                    Mm(*start_y as f32 * 0.352778),
-                                ),
-                                false,
-                            ),
-                            (
-                                Point::new(
-                                    Mm(*end_x as f32 * 0.352778),
-                                    Mm(*end_y as f32 * 0.352778),
-                                ),
-                                false,
-                            ),
-                        ];
-
-                        let line = Line {
-                            points,
-                            is_closed: false,
-                        };
-
-                        current_layer.set_outline_color(color.to_printpdf_color());
-                        current_layer.add_line(line);
+                        operations.extend([
+                            Op::SaveGraphicsState,
+                            Op::SetOutlineColor {
+                                col: color.to_printpdf_color(),
+                            },
+                            Op::SetOutlineThickness {
+                                pt: Pt(*width as f32),
+                            },
+                            Op::DrawLine {
+                                line: printpdf::Line {
+                                    points: vec![
+                                        LinePoint {
+                                            p: Point::new(
+                                                Mm(*start_x as f32 * 0.352778),
+                                                Mm(*start_y as f32 * 0.352778),
+                                            ),
+                                            bezier: false,
+                                        },
+                                        LinePoint {
+                                            p: Point::new(
+                                                Mm(*end_x as f32 * 0.352778),
+                                                Mm(*end_y as f32 * 0.352778),
+                                            ),
+                                            bezier: false,
+                                        },
+                                    ],
+                                    is_closed: false,
+                                },
+                            },
+                            Op::RestoreGraphicsState,
+                        ]);
                     }
                     PageContent::Table { x, y, rows, .. } => {
-                        // Render table as text for now (can be enhanced with proper table rendering)
                         let mut table_y = *y;
-                        let font = doc.add_builtin_font(BuiltinFont::Helvetica).map_err(|e| {
-                            OfficeError::InvalidFormat(format!("Font error: {}", e))
-                        })?;
-
                         for row in rows {
                             let mut table_x = *x;
                             for cell in &row.cells {
-                                current_layer.use_text(
-                                    cell.content.clone(),
+                                operations.extend(text_operations(
+                                    &cell.content,
+                                    table_x,
+                                    table_y,
                                     10.0,
-                                    Mm(table_x as f32 * 0.352778),
-                                    Mm(table_y as f32 * 0.352778),
-                                    &font,
-                                );
+                                    &Color::black(),
+                                ));
                                 table_x += cell.width;
                             }
                             table_y -= row.height;
                         }
                     }
-                    _ => {
-                        // Handle other content types as needed
-                    }
+                    _ => {}
                 }
             }
+
+            operations
         }
 
-        // Add additional pages
-        for (page_index, page) in self.pages.iter().enumerate().skip(1) {
-            let (page_ref, layer_ref) = doc.add_page(
-                Mm(page.width as f32 * 0.352778),
-                Mm(page.height as f32 * 0.352778),
-                &format!("Page {}", page_index + 1),
-            );
-
-            let current_layer = doc.get_page(page_ref).get_layer(layer_ref);
-
-            // Add content for this page
-            for content in &page.content {
-                if let PageContent::Text {
-                    content: text,
-                    x,
-                    y,
-                    size,
-                    ..
-                } = content
-                {
-                    let font = doc
-                        .add_builtin_font(BuiltinFont::Helvetica)
-                        .map_err(|e| OfficeError::InvalidFormat(format!("Font error: {}", e)))?;
-
-                    current_layer.use_text(
-                        text.clone(),
-                        *size as f32,
-                        Mm(*x as f32 * 0.352778),
-                        Mm(*y as f32 * 0.352778),
-                        &font,
-                    );
-                }
-            }
+        if self.pages.is_empty() {
+            return Err(OfficeError::InvalidFormat(
+                "Cannot create PDF with no pages".to_string(),
+            ));
         }
 
-        // Configure document metadata properly
-        let doc = doc
-            .with_title(&self.title)
-            .with_author(&self.author)
-            .with_subject(&self.subject);
+        let mut document = printpdf::PdfDocument::new(&self.title);
+        document.metadata.info.author = self.author.clone();
+        document.metadata.info.subject = self.subject.clone();
+        document.metadata.info.keywords = self
+            .keywords
+            .split(',')
+            .map(str::trim)
+            .filter(|keyword| !keyword.is_empty())
+            .map(str::to_string)
+            .collect();
 
-        let doc = if !self.keywords.is_empty() {
-            let keywords_vec: Vec<&str> = self.keywords.split(',').map(|k| k.trim()).collect();
-            doc.with_keywords(keywords_vec)
-        } else {
-            doc
-        };
+        let pages = self
+            .pages
+            .iter()
+            .map(|page| {
+                printpdf::PdfPage::new(
+                    Mm(page.width as f32 * 0.352778),
+                    Mm(page.height as f32 * 0.352778),
+                    page_operations(page),
+                )
+            })
+            .collect();
+        document.with_pages(pages);
 
-        // Save to bytes using correct API
-        let mut buffer = Vec::new();
-        {
-            let mut buf_writer = BufWriter::new(&mut buffer);
-            doc.save(&mut buf_writer)
-                .map_err(|e| OfficeError::InvalidFormat(format!("PDF save error: {}", e)))?;
-        }
-
-        Ok(buffer)
+        let mut warnings = Vec::new();
+        Ok(document.save(&PdfSaveOptions::default(), &mut warnings))
     }
 
     fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {

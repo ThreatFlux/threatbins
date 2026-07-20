@@ -2,6 +2,7 @@
 name = "office-sdk"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.95.0"
 authors = ["Your Name <your.email@example.com>"]
 description = "A Rust SDK and CLI for creating and parsing Office formats (DOCX, XLSX, PPTX, PDF, EML) with Markdown conversion"
 license = "MIT OR Apache-2.0"
@@ -11,7 +12,7 @@ categories = ["parser-implementations", "encoding"]
 
 [dependencies]
 zip = "0.6"
-quick-xml = "0.36"
+quick-xml = "0.41"
 serde = { version = "1.0", features = ["derive"] }
 serde-xml-rs = "0.6"
 thiserror = "1.0"
@@ -22,8 +23,8 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 image = "0.25"
 uuid = { version = "1.0", features = ["v4"] }
-printpdf = "0.7"
-lopdf = "0.33"
+printpdf = { version = "0.11.3", default-features = false }
+lopdf = { version = "0.44", default-features = false }
 pdf-writer = "0.9"
 md5 = "0.7"
 clap = { version = "4.4", features = ["derive", "color", "suggestions"] }
