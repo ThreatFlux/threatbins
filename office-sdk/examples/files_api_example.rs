@@ -258,7 +258,7 @@ Scheduled for January 29th, same time."#;
     ];
 
     for format in &formats_to_convert {
-        let result = api.convert_document(text_input.clone(), *format)?;
+        let result = api.convert_document(text_input.clone(), format.clone())?;
         println!(
             "✓ Converted to {}: {} ({} bytes)",
             format.file_extension().to_uppercase(),

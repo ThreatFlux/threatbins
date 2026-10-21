@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
-use zip::{ZipArchive, ZipWriter, write::FileOptions};
+use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 #[derive(Debug, Clone)]
 pub struct DocxDocument {
@@ -688,7 +688,7 @@ impl DocxDocument {
 
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(ref e)) if e.name().as_ref() == b"w:t" => {
+                Ok(Event::Start(ref e)) if e.name().as_ref() == "w:t" => {
                     in_text = true;
                 }
                 Ok(Event::Text(e)) if in_text => {
@@ -697,7 +697,7 @@ impl DocxDocument {
                 Ok(Event::GeneralRef(reference)) if in_text => {
                     text_content.push_str(&decode_xml_reference(&reference)?);
                 }
-                Ok(Event::End(ref e)) if e.name().as_ref() == b"w:t" => {
+                Ok(Event::End(ref e)) if e.name().as_ref() == "w:t" => {
                     in_text = false;
                     text_content.push(' ');
                 }
@@ -1056,7 +1056,7 @@ impl OfficeDocument for DocxDocument {
 
         for i in 0..archive.len() {
             let file = archive.by_index(i)?;
-            let name = file.name().to_string();
+            let name = file.name()?.into_owned();
 
             if name.starts_with("word/media/") {
                 drop(file);
@@ -1094,10 +1094,10 @@ impl OfficeDocument for DocxDocument {
             let cursor = Cursor::new(&mut buf);
             let mut zip = ZipWriter::new(cursor);
 
-            zip.start_file("[Content_Types].xml", FileOptions::default())?;
+            zip.start_file("[Content_Types].xml", SimpleFileOptions::default())?;
             zip.write_all(Self::default_content_types_xml().as_bytes())?;
 
-            zip.start_file("_rels/.rels", FileOptions::default())?;
+            zip.start_file("_rels/.rels", SimpleFileOptions::default())?;
             zip.write_all(
                 self.relationships
                     .as_ref()
@@ -1105,31 +1105,31 @@ impl OfficeDocument for DocxDocument {
                     .as_bytes(),
             )?;
 
-            zip.start_file("word/document.xml", FileOptions::default())?;
+            zip.start_file("word/document.xml", SimpleFileOptions::default())?;
             zip.write_all(self.content.as_bytes())?;
 
             if let Some(styles) = &self.styles {
-                zip.start_file("word/styles.xml", FileOptions::default())?;
+                zip.start_file("word/styles.xml", SimpleFileOptions::default())?;
                 zip.write_all(styles.as_bytes())?;
             }
 
             if let Some(numbering) = &self.numbering {
-                zip.start_file("word/numbering.xml", FileOptions::default())?;
+                zip.start_file("word/numbering.xml", SimpleFileOptions::default())?;
                 zip.write_all(numbering.as_bytes())?;
             }
 
             if let Some(settings) = &self.settings {
-                zip.start_file("word/settings.xml", FileOptions::default())?;
+                zip.start_file("word/settings.xml", SimpleFileOptions::default())?;
                 zip.write_all(settings.as_bytes())?;
             }
 
             if let Some(web_settings) = &self.web_settings {
-                zip.start_file("word/webSettings.xml", FileOptions::default())?;
+                zip.start_file("word/webSettings.xml", SimpleFileOptions::default())?;
                 zip.write_all(web_settings.as_bytes())?;
             }
 
             if let Some(font_table) = &self.font_table {
-                zip.start_file("word/fontTable.xml", FileOptions::default())?;
+                zip.start_file("word/fontTable.xml", SimpleFileOptions::default())?;
                 zip.write_all(font_table.as_bytes())?;
             }
 
@@ -1143,23 +1143,23 @@ impl OfficeDocument for DocxDocument {
                     _ => "png",
                 };
                 let media_path = format!("word/media/{}.{}", image_id, extension);
-                zip.start_file(&media_path, FileOptions::default())?;
+                zip.start_file(&media_path, SimpleFileOptions::default())?;
                 zip.write_all(&image_data.data)?;
             }
 
             // Write VBA project if present
             if let Some(vba_data) = &self.vba_project {
-                zip.start_file("word/vbaProject.bin", FileOptions::default())?;
+                zip.start_file("word/vbaProject.bin", SimpleFileOptions::default())?;
                 zip.write_all(vba_data)?;
             }
 
             if let Some(app) = &self.app_properties {
-                zip.start_file("docProps/app.xml", FileOptions::default())?;
+                zip.start_file("docProps/app.xml", SimpleFileOptions::default())?;
                 zip.write_all(app.as_bytes())?;
             }
 
             // Use enhanced core properties with metadata
-            zip.start_file("docProps/core.xml", FileOptions::default())?;
+            zip.start_file("docProps/core.xml", SimpleFileOptions::default())?;
             zip.write_all(self.create_enhanced_core_properties().as_bytes())?;
 
             zip.finish()?;

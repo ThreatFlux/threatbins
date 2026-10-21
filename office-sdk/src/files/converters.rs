@@ -136,7 +136,8 @@ impl DocumentConverters {
             DocumentFormat::Markdown,
         ];
 
-        all_formats.to_vec()
+        all_formats
+            .to_vec()
             .iter()
             .map(|format| {
                 let targets = all_formats

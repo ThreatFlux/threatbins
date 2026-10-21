@@ -1,0 +1,235 @@
+Exact main: 65cb029a500a1f0f915f49087799a8966bb9e52a
+Command: CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=<shared dependency cache> cargo +1.99.1 check --manifest-path <temporary exact-main archive>/office-sdk/Cargo.toml --all-targets --all-features --locked
+Baseline lock: generated from the unchanged original manifest, as no lockfile was committed.
+Exit: 101
+
+error[E0599]: no method named `set_author` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:12:9
+   |
+12 |     doc.set_author("Office SDK Demo");
+   |         ^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_title` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:13:9
+   |
+13 |     doc.set_title("Q4 2024 Financial Report");
+   |         ^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_subject` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:14:9
+   |
+14 |     doc.set_subject("Quarterly Business Analysis");
+   |         ^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_description` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:15:9
+   |
+15 |     doc.set_description("Comprehensive financial and operational analysis for Q4 2024");
+   |         ^^^^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_keywords` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:16:9
+   |
+16 |     doc.set_keywords("financial, quarterly, analysis, excel, data");
+   |         ^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_category` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:17:9
+   |
+17 |     doc.set_category("Business Reports");
+   |         ^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_page_size` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:21:9
+   |
+21 |     doc.set_page_size(PaperSize::A4);
+   |         ^^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_orientation` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:22:9
+   |
+22 |     doc.set_orientation(PageOrientation::Landscape);
+   |         ^^^^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_margins` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:23:9
+   |
+23 |     doc.set_margins(0.75, 0.75, 1.0, 1.0);
+   |         ^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_scale` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:24:9
+   |
+24 |     doc.set_scale(85);
+   |         ^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `add_chart` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:78:9
+   |
+78 |     doc.add_chart(
+   |     ----^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `add_vba_macro` found for struct `XlsxDocument` in the current scope
+   --> examples/advanced_xlsx_simple.rs:103:9
+    |
+103 |     doc.add_vba_macro(vba_macro)?;
+    |         ^^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `get_document_stats` found for struct `XlsxDocument` in the current scope
+   --> examples/advanced_xlsx_simple.rs:112:21
+    |
+112 |     let stats = doc.get_document_stats();
+    |                     ^^^^^^^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `office-sdk` (example "advanced_xlsx_simple") due to 13 previous errors
+warning: build failed, waiting for other jobs to finish...
+
+Updated full gate: CARGO_BUILD_JOBS=2 make ci
+Exit: 2 (cargo check exits 101)
+
+warning: unused variable: `image_id`
+   --> src/xlsx.rs:330:13
+    |
+330 |         let image_id = format!("image{}", self.images.len() + 1);
+    |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_image_id`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `DocumentXml` is never constructed
+   --> src/docx.rs:149:8
+    |
+149 | struct DocumentXml {
+    |        ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `Body` is never constructed
+   --> src/docx.rs:155:8
+    |
+155 | struct Body {
+    |        ^^^^
+
+warning: struct `Paragraph` is never constructed
+   --> src/docx.rs:161:8
+    |
+161 | struct Paragraph {
+    |        ^^^^^^^^^
+
+warning: struct `Run` is never constructed
+   --> src/docx.rs:167:8
+    |
+167 | struct Run {
+    |        ^^^
+
+warning: method `create_notes_xml` is never used
+    --> src/pptx.rs:1184:8
+     |
+1089 | impl PptxDocument {
+     | ----------------- method in this implementation
+...
+1184 |     fn create_notes_xml(&self, notes_text: &str) -> String {
+     |        ^^^^^^^^^^^^^^^^
+
+warning: `office-sdk` (lib) generated 6 warnings (run `cargo fix --lib -p office-sdk` to apply 1 suggestion)
+warning: `office-sdk` (lib test) generated 6 warnings (6 duplicates)
+    Checking office-sdk v0.1.0 (/Users/vtriple/main/threatbins/office-sdk)
+warning: unused import: `bytes::Bytes`
+ --> src/bin/simple-api-server.rs:1:5
+  |
+1 | use bytes::Bytes;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `title`
+   --> src/bin/simple-api-server.rs:159:5
+    |
+159 |     title: &Option<String>,
+    |     ^^^^^ help: if this is intentional, prefix it with an underscore: `_title`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+error[E0599]: no method named `set_author` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:12:9
+   |
+12 |     doc.set_author("Office SDK Demo");
+   |         ^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_title` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:13:9
+   |
+13 |     doc.set_title("Q4 2024 Financial Report");
+   |         ^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_subject` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:14:9
+   |
+14 |     doc.set_subject("Quarterly Business Analysis");
+   |         ^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_description` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:15:9
+   |
+15 |     doc.set_description("Comprehensive financial and operational analysis for Q4 2024");
+   |         ^^^^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_keywords` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:16:9
+   |
+16 |     doc.set_keywords("financial, quarterly, analysis, excel, data");
+   |         ^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_category` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:17:9
+   |
+17 |     doc.set_category("Business Reports");
+   |         ^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_page_size` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:21:9
+   |
+21 |     doc.set_page_size(PaperSize::A4);
+   |         ^^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+warning: `office-sdk` (bin "simple-api-server" test) generated 2 warnings (run `cargo fix --bin "simple-api-server" -p office-sdk --tests` to apply 2 suggestions)
+error[E0599]: no method named `set_orientation` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:22:9
+   |
+22 |     doc.set_orientation(PageOrientation::Landscape);
+   |         ^^^^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_margins` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:23:9
+   |
+23 |     doc.set_margins(0.75, 0.75, 1.0, 1.0);
+   |         ^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `set_scale` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:24:9
+   |
+24 |     doc.set_scale(85);
+   |         ^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `add_chart` found for struct `XlsxDocument` in the current scope
+  --> examples/advanced_xlsx_simple.rs:78:9
+   |
+78 |     doc.add_chart(
+   |     ----^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `add_vba_macro` found for struct `XlsxDocument` in the current scope
+   --> examples/advanced_xlsx_simple.rs:103:9
+    |
+103 |     doc.add_vba_macro(vba_macro)?;
+    |         ^^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+error[E0599]: no method named `get_document_stats` found for struct `XlsxDocument` in the current scope
+   --> examples/advanced_xlsx_simple.rs:112:21
+    |
+112 |     let stats = doc.get_document_stats();
+    |                     ^^^^^^^^^^^^^^^^^^ method not found in `XlsxDocument`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `office-sdk` (example "advanced_xlsx_simple") due to 13 previous errors
+warning: build failed, waiting for other jobs to finish...
+make: *** [check] Error 101

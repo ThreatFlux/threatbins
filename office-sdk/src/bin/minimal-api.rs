@@ -342,3 +342,18 @@ async fn main() {
 
     warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
 }
+
+#[cfg(test)]
+mod dependency_regressions {
+    use super::*;
+
+    #[tokio::test]
+    async fn health_handler_remains_valid_json_over_warp() {
+        let route = warp::path("health").and(warp::get()).and_then(health_check);
+        let response = warp::test::request().path("/health").reply(&route).await;
+        assert_eq!(response.status(), 200);
+        let body: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(body["success"], true);
+        assert_eq!(body["data"], "OK");
+    }
+}

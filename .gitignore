@@ -103,3 +103,6 @@ cpp-sdk/cmake-build-*/
 cpp-sdk/*.o
 cpp-sdk/*.a
 cpp-sdk/*.so
+# Reproducible resolutions for the shipped Rust applications
+!/office-sdk/Cargo.lock
+!/api-test/Cargo.lock

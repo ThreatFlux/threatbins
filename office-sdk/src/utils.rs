@@ -5,20 +5,14 @@ use zip::ZipArchive;
 
 /// Decodes a text event and maps malformed XML into the SDK error type.
 pub(crate) fn decode_xml_text(text: &BytesText<'_>) -> Result<String> {
-    let decoded = text
-        .decode()
-        .map_err(|error| OfficeError::XmlParsing(error.into()))?;
-    quick_xml::escape::unescape(&decoded)
+    quick_xml::escape::unescape(text.as_ref())
         .map(|text| text.into_owned())
         .map_err(|error| OfficeError::XmlParsing(error.into()))
 }
 
 /// Resolves a predefined or numeric XML reference emitted as a separate event.
 pub(crate) fn decode_xml_reference(reference: &BytesRef<'_>) -> Result<String> {
-    let reference = reference
-        .decode()
-        .map_err(|error| OfficeError::XmlParsing(error.into()))?;
-    let escaped = format!("&{reference};");
+    let escaped = format!("&{};", reference.as_ref());
     quick_xml::escape::unescape(&escaped)
         .map(|text| text.into_owned())
         .map_err(|error| OfficeError::XmlParsing(error.into()))
@@ -55,8 +49,8 @@ pub fn validate_office_format<R: Read + std::io::Seek>(
     required_files: &[&str],
 ) -> Result<()> {
     let file_names: Vec<String> = (0..archive.len())
-        .map(|i| archive.by_index(i).unwrap().name().to_string())
-        .collect();
+        .map(|i| Ok(archive.by_index(i)?.name()?.into_owned()))
+        .collect::<Result<_>>()?;
 
     for required_file in required_files {
         if !file_names.iter().any(|name| name == required_file) {

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, Write};
 use std::path::Path;
-use zip::{ZipArchive, ZipWriter, write::FileOptions};
+use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 #[derive(Debug, Clone)]
 pub struct XlsxDocument {
@@ -257,12 +257,11 @@ impl XlsxDocument {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => match e.name().as_ref() {
-                    b"row" => {
+                    "row" => {
                         if let Some(Ok(attr)) = e
                             .attributes()
-                            .find(|attr| attr.as_ref().map(|a| a.key.as_ref()) == Ok(b"r"))
-                            && let Ok(row_str) = std::str::from_utf8(&attr.value)
-                            && let Ok(row_num) = row_str.parse::<usize>()
+                            .find(|attr| attr.as_ref().map(|a| a.key.as_ref()) == Ok("r"))
+                            && let Ok(row_num) = attr.value.parse::<usize>()
                         {
                             while data.len() < row_num - 1 {
                                 data.push(Vec::new());
@@ -271,7 +270,7 @@ impl XlsxDocument {
                             current_row_num = row_num - 1;
                         }
                     }
-                    b"v" | b"t" => {
+                    "v" | "t" => {
                         in_cell_value = true;
                         current_cell_value.clear();
                     }
@@ -284,13 +283,13 @@ impl XlsxDocument {
                     current_cell_value.push_str(&decode_xml_reference(&reference)?);
                 }
                 Ok(Event::End(ref e)) => match e.name().as_ref() {
-                    b"row" => {
+                    "row" => {
                         if data.len() <= current_row_num {
                             data.resize(current_row_num + 1, Vec::new());
                         }
                         data[current_row_num] = current_row.clone();
                     }
-                    b"v" | b"t" => {
+                    "v" | "t" => {
                         current_row.push(std::mem::take(&mut current_cell_value));
                         in_cell_value = false;
                     }
@@ -520,7 +519,7 @@ impl OfficeDocument for XlsxDocument {
 
         for i in 0..archive.len() {
             let file = archive.by_index(i)?;
-            let name = file.name().to_string();
+            let name = file.name()?.into_owned();
 
             if name.starts_with("xl/worksheets/") && name.ends_with(".xml") {
                 drop(file);
@@ -609,10 +608,10 @@ impl OfficeDocument for XlsxDocument {
             let cursor = Cursor::new(&mut buf);
             let mut zip = ZipWriter::new(cursor);
 
-            zip.start_file("[Content_Types].xml", FileOptions::default())?;
+            zip.start_file("[Content_Types].xml", SimpleFileOptions::default())?;
             zip.write_all(Self::default_content_types_xml().as_bytes())?;
 
-            zip.start_file("_rels/.rels", FileOptions::default())?;
+            zip.start_file("_rels/.rels", SimpleFileOptions::default())?;
             zip.write_all(
                 self.relationships
                     .as_ref()
@@ -620,35 +619,35 @@ impl OfficeDocument for XlsxDocument {
                     .as_bytes(),
             )?;
 
-            zip.start_file("xl/workbook.xml", FileOptions::default())?;
+            zip.start_file("xl/workbook.xml", SimpleFileOptions::default())?;
             zip.write_all(self.workbook.as_bytes())?;
 
-            zip.start_file("xl/_rels/workbook.xml.rels", FileOptions::default())?;
+            zip.start_file("xl/_rels/workbook.xml.rels", SimpleFileOptions::default())?;
             zip.write_all(Self::workbook_relationships_xml().as_bytes())?;
 
             for (sheet_name, worksheet_content) in &self.worksheets {
                 let path = format!("xl/worksheets/{}.xml", sheet_name);
-                zip.start_file(&path, FileOptions::default())?;
+                zip.start_file(&path, SimpleFileOptions::default())?;
                 zip.write_all(worksheet_content.as_bytes())?;
             }
 
             if let Some(shared_strings) = &self.shared_strings {
-                zip.start_file("xl/sharedStrings.xml", FileOptions::default())?;
+                zip.start_file("xl/sharedStrings.xml", SimpleFileOptions::default())?;
                 zip.write_all(shared_strings.as_bytes())?;
             }
 
             if let Some(styles) = &self.styles {
-                zip.start_file("xl/styles.xml", FileOptions::default())?;
+                zip.start_file("xl/styles.xml", SimpleFileOptions::default())?;
                 zip.write_all(styles.as_bytes())?;
             }
 
             if let Some(app) = &self.app_properties {
-                zip.start_file("docProps/app.xml", FileOptions::default())?;
+                zip.start_file("docProps/app.xml", SimpleFileOptions::default())?;
                 zip.write_all(app.as_bytes())?;
             }
 
             if let Some(core) = &self.core_properties {
-                zip.start_file("docProps/core.xml", FileOptions::default())?;
+                zip.start_file("docProps/core.xml", SimpleFileOptions::default())?;
                 zip.write_all(core.as_bytes())?;
             }
 
@@ -699,7 +698,7 @@ impl XlsxDocument {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => {
-                    current_element = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                    current_element = e.local_name().as_ref().to_string();
                     current_text.clear();
                 }
                 Ok(Event::Text(e)) => {

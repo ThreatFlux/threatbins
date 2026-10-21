@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Cursor, Write};
 use std::path::Path;
-use zip::{ZipArchive, ZipWriter, write::FileOptions};
+use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 #[derive(Debug, Clone)]
 pub struct PptxDocument {
@@ -520,7 +520,7 @@ impl PptxDocument {
         // Extract all text elements first
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(ref e)) if e.name().as_ref() == b"a:t" => {
+                Ok(Event::Start(ref e)) if e.name().as_ref() == "a:t" => {
                     in_text = true;
                     current_text.clear();
                 }
@@ -530,7 +530,7 @@ impl PptxDocument {
                 Ok(Event::GeneralRef(reference)) if in_text => {
                     current_text.push_str(&decode_xml_reference(&reference)?);
                 }
-                Ok(Event::End(ref e)) if e.name().as_ref() == b"a:t" => {
+                Ok(Event::End(ref e)) if e.name().as_ref() == "a:t" => {
                     in_text = false;
                     if !current_text.trim().is_empty() {
                         all_text.push(current_text.trim().to_string());
@@ -864,7 +864,7 @@ impl OfficeDocument for PptxDocument {
         // Read slides
         for i in 0..archive.len() {
             let file = archive.by_index(i)?;
-            let name = file.name().to_string();
+            let name = file.name()?.into_owned();
 
             if name.starts_with("ppt/slides/") && name.ends_with(".xml") {
                 drop(file);
@@ -969,7 +969,7 @@ impl OfficeDocument for PptxDocument {
             let mut zip = ZipWriter::new(cursor);
 
             // Content types
-            zip.start_file("[Content_Types].xml", FileOptions::default())?;
+            zip.start_file("[Content_Types].xml", SimpleFileOptions::default())?;
             let mut content_types = Self::default_content_types_xml();
 
             // Add slide content types
@@ -987,7 +987,7 @@ impl OfficeDocument for PptxDocument {
             zip.write_all(content_types.as_bytes())?;
 
             // Root relationships
-            zip.start_file("_rels/.rels", FileOptions::default())?;
+            zip.start_file("_rels/.rels", SimpleFileOptions::default())?;
             zip.write_all(
                 self.relationships
                     .as_ref()
@@ -996,34 +996,37 @@ impl OfficeDocument for PptxDocument {
             )?;
 
             // Presentation
-            zip.start_file("ppt/presentation.xml", FileOptions::default())?;
+            zip.start_file("ppt/presentation.xml", SimpleFileOptions::default())?;
             zip.write_all(self.presentation.as_bytes())?;
 
             // Presentation relationships
-            zip.start_file("ppt/_rels/presentation.xml.rels", FileOptions::default())?;
+            zip.start_file(
+                "ppt/_rels/presentation.xml.rels",
+                SimpleFileOptions::default(),
+            )?;
             zip.write_all(self.presentation_relationships_xml().as_bytes())?;
 
             // Slide masters
             for (master_name, master_content) in &self.slide_masters {
                 let path = format!("ppt/slideMasters/{}.xml", master_name);
-                zip.start_file(&path, FileOptions::default())?;
+                zip.start_file(&path, SimpleFileOptions::default())?;
                 zip.write_all(master_content.as_bytes())?;
 
                 // Slide master relationships
                 let rels_path = format!("ppt/slideMasters/_rels/{}.xml.rels", master_name);
-                zip.start_file(&rels_path, FileOptions::default())?;
+                zip.start_file(&rels_path, SimpleFileOptions::default())?;
                 zip.write_all(Self::slide_master_relationships_xml().as_bytes())?;
             }
 
             // Slide layouts
             for (layout_name, layout_content) in &self.slide_layouts {
                 let path = format!("ppt/slideLayouts/{}.xml", layout_name);
-                zip.start_file(&path, FileOptions::default())?;
+                zip.start_file(&path, SimpleFileOptions::default())?;
                 zip.write_all(layout_content.as_bytes())?;
 
                 // Slide layout relationships
                 let rels_path = format!("ppt/slideLayouts/_rels/{}.xml.rels", layout_name);
-                zip.start_file(&rels_path, FileOptions::default())?;
+                zip.start_file(&rels_path, SimpleFileOptions::default())?;
                 zip.write_all(Self::slide_layout_relationships_xml().as_bytes())?;
             }
 
@@ -1044,30 +1047,30 @@ impl OfficeDocument for PptxDocument {
             for (i, slide_id) in slide_ids.iter().enumerate() {
                 let slide_content = &self.slides[slide_id];
                 let path = format!("ppt/slides/slide{}.xml", i + 1);
-                zip.start_file(&path, FileOptions::default())?;
+                zip.start_file(&path, SimpleFileOptions::default())?;
                 zip.write_all(slide_content.as_bytes())?;
 
                 // Slide relationships
                 let rels_path = format!("ppt/slides/_rels/slide{}.xml.rels", i + 1);
-                zip.start_file(&rels_path, FileOptions::default())?;
+                zip.start_file(&rels_path, SimpleFileOptions::default())?;
                 zip.write_all(Self::slide_relationships_xml().as_bytes())?;
             }
 
             // Theme
             if let Some(theme) = &self.theme {
-                zip.start_file("ppt/theme/theme1.xml", FileOptions::default())?;
+                zip.start_file("ppt/theme/theme1.xml", SimpleFileOptions::default())?;
                 zip.write_all(theme.as_bytes())?;
             }
 
             // App properties
             if let Some(app) = &self.app_properties {
-                zip.start_file("docProps/app.xml", FileOptions::default())?;
+                zip.start_file("docProps/app.xml", SimpleFileOptions::default())?;
                 zip.write_all(app.as_bytes())?;
             }
 
             // Core properties
             if let Some(core) = &self.core_properties {
-                zip.start_file("docProps/core.xml", FileOptions::default())?;
+                zip.start_file("docProps/core.xml", SimpleFileOptions::default())?;
                 zip.write_all(core.as_bytes())?;
             }
 
@@ -1118,7 +1121,7 @@ impl PptxDocument {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => {
-                    current_element = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                    current_element = e.local_name().as_ref().to_string();
                     current_text.clear();
                 }
                 Ok(Event::Text(e)) => {

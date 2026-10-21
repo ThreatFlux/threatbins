@@ -5,8 +5,8 @@ use office_sdk::docx::{
 use office_sdk::error::OfficeError;
 use office_sdk::markdown::{InlineElement, MarkdownDocument, MarkdownElement};
 use office_sdk::pdf::{
-    AnnotationType, Color, EncryptionLevel, FormFieldType, PageContent, PdfDocument, PermissionFlags, ShapeType,
-    TextStyle,
+    AnnotationType, Color, EncryptionLevel, FormFieldType, PageContent, PdfDocument,
+    PermissionFlags, ShapeType, TextStyle,
 };
 use office_sdk::pptx::{AnimationType, PptxDocument, SlideSize};
 use office_sdk::utils::{read_zip_entry, read_zip_entry_bytes, validate_office_format};
@@ -16,7 +16,7 @@ use office_sdk::xlsx::{
 use std::io::Cursor;
 use std::io::Write;
 use tempfile::TempDir;
-use zip::{ZipArchive, ZipWriter, write::FileOptions};
+use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 #[test]
 fn test_docx_creation_and_parsing() {
@@ -130,10 +130,11 @@ fn test_utils_read_zip_entry() {
         let cursor = Cursor::new(&mut buf);
         let mut zip = ZipWriter::new(cursor);
 
-        zip.start_file("test.txt", FileOptions::default()).unwrap();
+        zip.start_file("test.txt", SimpleFileOptions::default())
+            .unwrap();
         zip.write_all(b"Hello, World!").unwrap();
 
-        zip.start_file("binary.bin", FileOptions::default())
+        zip.start_file("binary.bin", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(&[0x01, 0x02, 0x03, 0x04]).unwrap();
 
@@ -164,7 +165,7 @@ fn test_utils_read_zip_entry_bytes() {
         let cursor = Cursor::new(&mut buf);
         let mut zip = ZipWriter::new(cursor);
 
-        zip.start_file("binary.bin", FileOptions::default())
+        zip.start_file("binary.bin", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(&[0x01, 0x02, 0x03, 0x04]).unwrap();
 
@@ -195,11 +196,11 @@ fn test_utils_validate_office_format() {
         let cursor = Cursor::new(&mut buf);
         let mut zip = ZipWriter::new(cursor);
 
-        zip.start_file("word/document.xml", FileOptions::default())
+        zip.start_file("word/document.xml", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"<document/>").unwrap();
 
-        zip.start_file("[Content_Types].xml", FileOptions::default())
+        zip.start_file("[Content_Types].xml", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"<Types/>").unwrap();
 
