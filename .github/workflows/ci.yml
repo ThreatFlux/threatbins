@@ -26,7 +26,5 @@ jobs:
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-audit@0.22.2
-      - name: Validate migrated library, binaries, regressions and MSRV
-        run: make ci-focused
-      - name: Full gate (pre-existing XLSX blocker remains visible)
+      - name: Validate all targets, tests, docs, audits and MSRV
         run: make ci

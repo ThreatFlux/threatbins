@@ -1,6 +1,9 @@
 use crate::OfficeDocument;
 use crate::error::{OfficeError, Result};
-use crate::utils::{decode_xml_reference, decode_xml_text, read_zip_entry, validate_office_format};
+use crate::utils::{
+    decode_xml_reference, decode_xml_text, read_zip_entry, read_zip_entry_bytes,
+    validate_office_format,
+};
 use chrono::{DateTime, Utc};
 use image::ImageReader;
 use quick_xml::{Reader, events::Event};
@@ -61,7 +64,7 @@ pub struct ImageInfo {
     pub alt_text: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Animation {
     pub id: String,
     pub animation_type: AnimationType,
@@ -70,7 +73,7 @@ pub struct Animation {
     pub delay: f64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum AnimationType {
     FadeIn,
     FadeOut,
@@ -856,17 +859,69 @@ impl OfficeDocument for PptxDocument {
         let relationships = read_zip_entry(&mut archive, "_rels/.rels").ok();
         let app_properties = read_zip_entry(&mut archive, "docProps/app.xml").ok();
         let core_properties = read_zip_entry(&mut archive, "docProps/core.xml").ok();
+        let vba_project = match read_zip_entry_bytes(&mut archive, "ppt/vbaProject.bin") {
+            Ok(bytes) => Some(bytes),
+            Err(OfficeError::MissingFile(_)) => None,
+            Err(error) => return Err(error),
+        };
 
         let mut slides = HashMap::new();
         let mut slide_layouts = HashMap::new();
         let mut slide_masters = HashMap::new();
+        let mut images = HashMap::new();
+        let mut notes = HashMap::new();
+        let animations = Self::read_animation_extension(&presentation)?;
 
         // Read slides
         for i in 0..archive.len() {
             let file = archive.by_index(i)?;
             let name = file.name()?.into_owned();
 
-            if name.starts_with("ppt/slides/") && name.ends_with(".xml") {
+            if name.starts_with("ppt/media/")
+                && matches!(
+                    Path::new(&name)
+                        .extension()
+                        .and_then(|value| value.to_str()),
+                    Some("png" | "jpg" | "jpeg" | "gif" | "bmp")
+                )
+            {
+                drop(file);
+                let data = read_zip_entry_bytes(&mut archive, &name)?;
+                let dimensions = ImageReader::new(Cursor::new(&data))
+                    .with_guessed_format()?
+                    .into_dimensions()?;
+                let filename = Path::new(&name);
+                let id = filename
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("image")
+                    .to_string();
+                let content_type = match filename.extension().and_then(|value| value.to_str()) {
+                    Some("jpg" | "jpeg") => "image/jpeg",
+                    Some("gif") => "image/gif",
+                    Some("bmp") => "image/bmp",
+                    _ => "image/png",
+                }
+                .to_string();
+                images.insert(
+                    id.clone(),
+                    ImageInfo {
+                        id,
+                        data,
+                        content_type,
+                        width: dimensions.0,
+                        height: dimensions.1,
+                        alt_text: String::new(),
+                    },
+                );
+            } else if name.starts_with("ppt/notesSlides/notesSlide") && name.ends_with(".xml") {
+                drop(file);
+                let content = read_zip_entry(&mut archive, &name)?;
+                let suffix = name
+                    .trim_start_matches("ppt/notesSlides/notesSlide")
+                    .trim_end_matches(".xml");
+                notes.insert(format!("slide{}", suffix), Self::read_notes_text(&content)?);
+            } else if name.starts_with("ppt/slides/") && name.ends_with(".xml") {
                 drop(file);
                 let content = read_zip_entry(&mut archive, &name)?;
                 let slide_name = name.replace("ppt/slides/", "").replace(".xml", "");
@@ -955,10 +1010,10 @@ impl OfficeDocument for PptxDocument {
             last_modified_by,
             revision,
             slide_size: SlideSize::default(),
-            images: HashMap::new(),
-            animations: HashMap::new(),
-            vba_project: None,
-            notes: HashMap::new(),
+            images,
+            animations,
+            vba_project,
+            notes,
         })
     }
 
@@ -971,6 +1026,11 @@ impl OfficeDocument for PptxDocument {
             // Content types
             zip.start_file("[Content_Types].xml", SimpleFileOptions::default())?;
             let mut content_types = Self::default_content_types_xml();
+            content_types = content_types.replace("</Types>", "<Default Extension=\"png\" ContentType=\"image/png\"/><Default Extension=\"jpg\" ContentType=\"image/jpeg\"/><Default Extension=\"gif\" ContentType=\"image/gif\"/><Default Extension=\"bmp\" ContentType=\"image/bmp\"/></Types>");
+            for slide_id in self.notes.keys() {
+                let suffix = slide_id.trim_start_matches("slide");
+                content_types = content_types.replace("</Types>", &format!("<Override PartName=\"/ppt/notesSlides/notesSlide{}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml\"/></Types>", suffix));
+            }
 
             // Add slide content types
             for i in 1..=self.slides.len() {
@@ -983,6 +1043,12 @@ impl OfficeDocument for PptxDocument {
                 if let Some(pos) = content_types.rfind("</Types>") {
                     content_types.insert_str(pos, &slide_override);
                 }
+            }
+            if self.has_vba_macros() {
+                content_types = content_types.replace(
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml",
+                    "application/vnd.ms-powerpoint.presentation.macroEnabled.main+xml",
+                ).replace("</Types>", "<Override PartName=\"/ppt/vbaProject.bin\" ContentType=\"application/vnd.ms-office.vbaProject\"/></Types>");
             }
             zip.write_all(content_types.as_bytes())?;
 
@@ -997,14 +1063,22 @@ impl OfficeDocument for PptxDocument {
 
             // Presentation
             zip.start_file("ppt/presentation.xml", SimpleFileOptions::default())?;
-            zip.write_all(self.presentation.as_bytes())?;
+            zip.write_all(self.presentation_with_animation_extension()?.as_bytes())?;
 
             // Presentation relationships
             zip.start_file(
                 "ppt/_rels/presentation.xml.rels",
                 SimpleFileOptions::default(),
             )?;
-            zip.write_all(self.presentation_relationships_xml().as_bytes())?;
+            let mut presentation_relationships = self.presentation_relationships_xml();
+            if let Some(vba) = &self.vba_project {
+                presentation_relationships = presentation_relationships.replace("</Relationships>", "<Relationship Id=\"rIdVba\" Type=\"http://schemas.microsoft.com/office/2006/relationships/vbaProject\" Target=\"vbaProject.bin\"/></Relationships>");
+                zip.write_all(presentation_relationships.as_bytes())?;
+                zip.start_file("ppt/vbaProject.bin", SimpleFileOptions::default())?;
+                zip.write_all(vba)?;
+            } else {
+                zip.write_all(presentation_relationships.as_bytes())?;
+            }
 
             // Slide masters
             for (master_name, master_content) in &self.slide_masters {
@@ -1053,7 +1127,37 @@ impl OfficeDocument for PptxDocument {
                 // Slide relationships
                 let rels_path = format!("ppt/slides/_rels/slide{}.xml.rels", i + 1);
                 zip.start_file(&rels_path, SimpleFileOptions::default())?;
-                zip.write_all(Self::slide_relationships_xml().as_bytes())?;
+                let mut slide_relationships = Self::slide_relationships_xml();
+                if let Some(notes) = self.notes.get(slide_id) {
+                    slide_relationships = slide_relationships.replace("</Relationships>", &format!("<Relationship Id=\"rIdNotes\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide\" Target=\"../notesSlides/notesSlide{}.xml\"/></Relationships>", i + 1));
+                    zip.write_all(slide_relationships.as_bytes())?;
+                    zip.start_file(
+                        format!("ppt/notesSlides/notesSlide{}.xml", i + 1),
+                        SimpleFileOptions::default(),
+                    )?;
+                    zip.write_all(self.create_notes_xml(notes).as_bytes())?;
+                    zip.start_file(
+                        format!("ppt/notesSlides/_rels/notesSlide{}.xml.rels", i + 1),
+                        SimpleFileOptions::default(),
+                    )?;
+                    zip.write_all(format!("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdSlide\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide\" Target=\"../slides/slide{}.xml\"/></Relationships>", i + 1).as_bytes())?;
+                } else {
+                    zip.write_all(slide_relationships.as_bytes())?;
+                }
+            }
+
+            for (id, image) in &self.images {
+                let extension = match image.content_type.as_str() {
+                    "image/jpeg" => "jpg",
+                    "image/gif" => "gif",
+                    "image/bmp" => "bmp",
+                    _ => "png",
+                };
+                zip.start_file(
+                    format!("ppt/media/{}.{}", id, extension),
+                    SimpleFileOptions::default(),
+                )?;
+                zip.write_all(&image.data)?;
             }
 
             // Theme
@@ -1069,10 +1173,8 @@ impl OfficeDocument for PptxDocument {
             }
 
             // Core properties
-            if let Some(core) = &self.core_properties {
-                zip.start_file("docProps/core.xml", SimpleFileOptions::default())?;
-                zip.write_all(core.as_bytes())?;
-            }
+            zip.start_file("docProps/core.xml", SimpleFileOptions::default())?;
+            zip.write_all(self.create_core_properties().as_bytes())?;
 
             zip.finish()?;
         }
@@ -1087,6 +1189,108 @@ impl OfficeDocument for PptxDocument {
 }
 
 impl PptxDocument {
+    // Preserve the SDK's animation model in an OOXML extension. This retains
+    // definitions across SDK round trips; it does not synthesize native timing
+    // trees or claim PowerPoint animation playback support.
+    fn presentation_with_animation_extension(&self) -> Result<String> {
+        let mut animations: Vec<_> = self.animations.values().collect();
+        animations.sort_by(|left, right| left.id.cmp(&right.id));
+        let json = serde_json::to_string(&animations)
+            .map_err(|error| OfficeError::SerializationError(error.to_string()))?;
+        let payload = quick_xml::escape::escape(&json);
+        let mut presentation = self.presentation.clone();
+        let opening = "<sdk:animations xmlns:sdk=\"urn:threatflux:office-sdk:animations:1\">";
+        if let Some(start) = presentation.find(opening) {
+            let start = start + opening.len();
+            if let Some(end) = presentation[start..].find("</sdk:animations>") {
+                presentation.replace_range(start..start + end, &payload);
+                return Ok(presentation);
+            }
+        }
+        let extension = format!(
+            "<p:ext uri=\"urn:threatflux:office-sdk:animations:1\">{}{}</sdk:animations></p:ext>",
+            opening, payload
+        );
+        if presentation.contains("</p:extLst>") {
+            presentation = presentation.replacen("</p:extLst>", &(extension + "</p:extLst>"), 1);
+        } else {
+            presentation = presentation.replacen(
+                "</p:presentation>",
+                &format!("<p:extLst>{}</p:extLst></p:presentation>", extension),
+                1,
+            );
+        }
+        Ok(presentation)
+    }
+
+    fn read_animation_extension(xml: &str) -> Result<HashMap<String, Animation>> {
+        let mut reader = Reader::from_str(xml);
+        let mut in_animations = false;
+        let mut json = String::new();
+        loop {
+            match reader.read_event()? {
+                Event::Start(element) if element.name().as_ref() == "sdk:animations" => {
+                    in_animations = true
+                }
+                Event::Text(text) if in_animations => json.push_str(&decode_xml_text(&text)?),
+                Event::GeneralRef(reference) if in_animations => {
+                    json.push_str(&decode_xml_reference(&reference)?)
+                }
+                Event::End(element) if element.name().as_ref() == "sdk:animations" => break,
+                Event::Eof => break,
+                _ => {}
+            }
+        }
+        if json.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let animations: Vec<Animation> = serde_json::from_str(&json)
+            .map_err(|error| OfficeError::SerializationError(error.to_string()))?;
+        Ok(animations
+            .into_iter()
+            .map(|animation| (animation.id.clone(), animation))
+            .collect())
+    }
+
+    fn read_notes_text(xml: &str) -> Result<String> {
+        let mut reader = Reader::from_str(xml);
+        let mut in_text = false;
+        let mut notes = String::new();
+        loop {
+            match reader.read_event()? {
+                Event::Start(element) if element.local_name().as_ref() == "t" => in_text = true,
+                Event::Text(text) if in_text => notes.push_str(&decode_xml_text(&text)?),
+                Event::GeneralRef(reference) if in_text => {
+                    notes.push_str(&decode_xml_reference(&reference)?)
+                }
+                Event::End(element) if element.local_name().as_ref() == "t" => in_text = false,
+                Event::Eof => break,
+                _ => {}
+            }
+        }
+        Ok(notes)
+    }
+
+    fn create_core_properties(&self) -> String {
+        use quick_xml::escape::escape;
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<dc:creator>{}</dc:creator><dc:title>{}</dc:title><dc:subject>{}</dc:subject><dc:description>{}</dc:description><cp:keywords>{}</cp:keywords><cp:category>{}</cp:category><cp:lastModifiedBy>{}</cp:lastModifiedBy><cp:revision>{}</cp:revision><dcterms:created xsi:type="dcterms:W3CDTF">{}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">{}</dcterms:modified>
+</cp:coreProperties>"#,
+            escape(&self.author),
+            escape(&self.title),
+            escape(&self.subject),
+            escape(&self.description),
+            escape(&self.keywords),
+            escape(&self.category),
+            escape(&self.last_modified_by),
+            self.revision,
+            self.created.to_rfc3339(),
+            self.modified.to_rfc3339()
+        )
+    }
+
     fn parse_core_properties(
         xml: &str,
     ) -> Result<(

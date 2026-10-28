@@ -365,7 +365,7 @@ pub struct Annotation {
     pub popup: Option<String>, // Reference to popup annotation
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnnotationType {
     Text,
     Link,
@@ -2097,12 +2097,14 @@ impl PdfDocument {
             .pages
             .iter()
             .flat_map(|page| &page.content)
-            .filter_map(|content| {
-                if let PageContent::Text { content, .. } = content {
-                    Some(content.len())
-                } else {
-                    None
-                }
+            .map(|content| match content {
+                PageContent::Text { content, .. } => content.len(),
+                PageContent::Table { rows, .. } => rows
+                    .iter()
+                    .flat_map(|row| &row.cells)
+                    .map(|cell| cell.content.len())
+                    .sum(),
+                _ => 0,
             })
             .sum();
 
@@ -2330,30 +2332,28 @@ impl OfficeDocument for PdfDocument {
                     if let Ok(info_dict) = info_obj.as_dict() {
                         // Extract all metadata fields
                         if let Ok(title) = info_dict.get(b"Title") {
-                            if let Ok(title_str) = title.as_str() {
-                                pdf_doc.title = String::from_utf8_lossy(title_str).to_string();
+                            if let Ok(title_str) = ::lopdf::decode_text_string(title) {
+                                pdf_doc.title = title_str;
                             }
                         }
                         if let Ok(author) = info_dict.get(b"Author") {
-                            if let Ok(author_str) = author.as_str() {
-                                pdf_doc.author = String::from_utf8_lossy(author_str).to_string();
+                            if let Ok(author_str) = ::lopdf::decode_text_string(author) {
+                                pdf_doc.author = author_str;
                             }
                         }
                         if let Ok(subject) = info_dict.get(b"Subject") {
-                            if let Ok(subject_str) = subject.as_str() {
-                                pdf_doc.subject = String::from_utf8_lossy(subject_str).to_string();
+                            if let Ok(subject_str) = ::lopdf::decode_text_string(subject) {
+                                pdf_doc.subject = subject_str;
                             }
                         }
                         if let Ok(keywords) = info_dict.get(b"Keywords") {
-                            if let Ok(keywords_str) = keywords.as_str() {
-                                pdf_doc.keywords =
-                                    String::from_utf8_lossy(keywords_str).to_string();
+                            if let Ok(keywords_str) = ::lopdf::decode_text_string(keywords) {
+                                pdf_doc.keywords = keywords_str;
                             }
                         }
                         if let Ok(creator) = info_dict.get(b"Creator") {
-                            if let Ok(creator_str) = creator.as_str() {
-                                pdf_doc.last_modified_by =
-                                    String::from_utf8_lossy(creator_str).to_string();
+                            if let Ok(creator_str) = ::lopdf::decode_text_string(creator) {
+                                pdf_doc.last_modified_by = creator_str;
                             }
                         }
                     }

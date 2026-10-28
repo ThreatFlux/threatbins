@@ -14,7 +14,9 @@ check:
 	@set -eu; for manifest in $(MANIFESTS); do cargo +$(RUST_STABLE) check --manifest-path $$manifest --all-targets --all-features --locked; done
 
 test:
-	@set -eu; for manifest in $(MANIFESTS); do cargo +$(RUST_STABLE) test --manifest-path $$manifest --all-targets --all-features --locked; cargo +$(RUST_STABLE) test --manifest-path $$manifest --doc --all-features --locked; done
+	@set -eu; for manifest in $(MANIFESTS); do cargo +$(RUST_STABLE) test --manifest-path $$manifest --all-targets --all-features --locked; done
+	# api-test is binary-only; Cargo's --doc requires a library target.
+	cargo +$(RUST_STABLE) test --manifest-path office-sdk/Cargo.toml --doc --all-features --locked
 
 docs:
 	cargo +$(RUST_STABLE) doc --manifest-path office-sdk/Cargo.toml --no-deps --all-features --locked
@@ -25,9 +27,8 @@ audit:
 msrv-check:
 	@set -eu; for manifest in $(MANIFESTS); do CARGO_TARGET_DIR=$$(dirname $$manifest)/target/msrv cargo +$(MSRV) check --manifest-path $$manifest --all-targets --all-features --locked; done
 
-# Preserve the full gate above: upstream's incomplete XLSX examples/tests fail
-# compilation. This separate gate validates the dependency migration without
-# claiming those existing all-target failures have been fixed.
+# Optional narrower checks for dependency work. CI always runs the full gate
+# above, including every example and integration test.
 .PHONY: ci-focused check-focused test-focused msrv-focused
 ci-focused: fmt-check check-focused test-focused docs audit msrv-focused
 

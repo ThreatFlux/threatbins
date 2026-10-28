@@ -1,6 +1,9 @@
 use crate::OfficeDocument;
 use crate::error::{OfficeError, Result};
-use crate::utils::{decode_xml_reference, decode_xml_text, read_zip_entry, validate_office_format};
+use crate::utils::{
+    decode_xml_reference, decode_xml_text, read_zip_entry, read_zip_entry_bytes,
+    validate_office_format,
+};
 use chrono::{DateTime, Utc};
 use quick_xml::{Reader, events::Event};
 use std::collections::HashMap;
@@ -197,6 +200,177 @@ impl XlsxDocument {
         let worksheet_xml = self.create_worksheet_xml(data)?;
         self.worksheets.insert(name.to_string(), worksheet_xml);
         Ok(())
+    }
+
+    pub fn set_author(&mut self, author: &str) {
+        self.author = author.to_string();
+        self.last_modified_by = author.to_string();
+        self.modified = Utc::now();
+    }
+
+    pub fn set_title(&mut self, title: &str) {
+        self.title = title.to_string();
+        self.modified = Utc::now();
+    }
+
+    pub fn set_subject(&mut self, subject: &str) {
+        self.subject = subject.to_string();
+        self.modified = Utc::now();
+    }
+
+    pub fn set_description(&mut self, description: &str) {
+        self.description = description.to_string();
+        self.modified = Utc::now();
+    }
+
+    pub fn set_keywords(&mut self, keywords: &str) {
+        self.keywords = keywords.to_string();
+        self.modified = Utc::now();
+    }
+
+    pub fn set_category(&mut self, category: &str) {
+        self.category = category.to_string();
+        self.modified = Utc::now();
+    }
+
+    pub fn set_page_size(&mut self, paper_size: PaperSize) {
+        self.page_setup.paper_size = paper_size;
+    }
+
+    pub fn set_orientation(&mut self, orientation: PageOrientation) {
+        self.page_setup.orientation = orientation;
+    }
+
+    /// Set top, bottom, left and right margins in inches.
+    pub fn set_margins(&mut self, top: f64, bottom: f64, left: f64, right: f64) {
+        self.page_setup.margin_top = top;
+        self.page_setup.margin_bottom = bottom;
+        self.page_setup.margin_left = left;
+        self.page_setup.margin_right = right;
+    }
+
+    pub fn set_scale(&mut self, scale: u32) {
+        self.page_setup.scale = scale;
+    }
+
+    /// Add a chart to the document's in-memory chart collection.
+    pub fn add_chart(
+        &mut self,
+        chart_type: ChartType,
+        title: &str,
+        data_range: &str,
+        width: u32,
+        height: u32,
+    ) -> Result<String> {
+        let id = format!("chart{}", self.charts.len() + 1);
+        self.charts.insert(
+            id.clone(),
+            Chart {
+                id: id.clone(),
+                chart_type,
+                title: title.to_string(),
+                data_range: data_range.to_string(),
+                width,
+                height,
+            },
+        );
+        self.modified = Utc::now();
+        Ok(id)
+    }
+
+    /// Add a table to the document's in-memory table collection.
+    pub fn create_table(
+        &mut self,
+        name: &str,
+        range: &str,
+        headers: &[&str],
+        data: &[Vec<&str>],
+    ) -> Result<String> {
+        let id = format!("table{}", self.tables.len() + 1);
+        self.tables.insert(
+            id.clone(),
+            Table {
+                id: id.clone(),
+                name: name.to_string(),
+                range: range.to_string(),
+                headers: headers.iter().map(|value| value.to_string()).collect(),
+                data: data
+                    .iter()
+                    .map(|row| row.iter().map(|value| value.to_string()).collect())
+                    .collect(),
+                style: TableStyle::default(),
+            },
+        );
+        self.modified = Utc::now();
+        Ok(id)
+    }
+
+    /// Store an already compiled VBA project (vbaProject.bin).
+    pub fn add_vba_macro(&mut self, vba_data: Vec<u8>) -> Result<()> {
+        self.vba_project = Some(vba_data);
+        self.modified = Utc::now();
+        Ok(())
+    }
+
+    pub fn has_vba_macros(&self) -> bool {
+        self.vba_project.is_some()
+    }
+
+    pub fn get_vba_project(&self) -> Option<&Vec<u8>> {
+        self.vba_project.as_ref()
+    }
+
+    pub fn get_text(&self) -> Result<String> {
+        let mut names: Vec<_> = self.worksheets.keys().collect();
+        names.sort();
+        let mut text = String::new();
+        for name in names {
+            for row in self.get_worksheet_data(name)? {
+                text.push_str(&row.join("\t"));
+                text.push('\n');
+            }
+        }
+        Ok(text)
+    }
+
+    pub fn get_document_stats(&self) -> DocumentStats {
+        DocumentStats {
+            worksheet_count: self.worksheets.len(),
+            image_count: self.images.len(),
+            chart_count: self.charts.len(),
+            table_count: self.tables.len(),
+            total_cells: self
+                .worksheets
+                .keys()
+                .filter_map(|name| self.get_worksheet_data(name).ok())
+                .flatten()
+                .map(|row| row.len())
+                .sum(),
+            has_vba: self.has_vba_macros(),
+            author: self.author.clone(),
+            created: self.created,
+            modified: self.modified,
+        }
+    }
+
+    fn create_core_properties(&self) -> String {
+        use quick_xml::escape::escape;
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<dc:creator>{}</dc:creator><dc:title>{}</dc:title><dc:subject>{}</dc:subject><dc:description>{}</dc:description><cp:keywords>{}</cp:keywords><cp:category>{}</cp:category><cp:lastModifiedBy>{}</cp:lastModifiedBy><cp:revision>{}</cp:revision><dcterms:created xsi:type="dcterms:W3CDTF">{}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">{}</dcterms:modified>
+</cp:coreProperties>"#,
+            escape(&self.author),
+            escape(&self.title),
+            escape(&self.subject),
+            escape(&self.description),
+            escape(&self.keywords),
+            escape(&self.category),
+            escape(&self.last_modified_by),
+            self.revision,
+            self.created.to_rfc3339(),
+            self.modified.to_rfc3339()
+        )
     }
 
     pub fn get_worksheet_data(&self, sheet_name: &str) -> Result<Vec<Vec<String>>> {
@@ -514,6 +688,11 @@ impl OfficeDocument for XlsxDocument {
         let relationships = read_zip_entry(&mut archive, "_rels/.rels").ok();
         let app_properties = read_zip_entry(&mut archive, "docProps/app.xml").ok();
         let core_properties = read_zip_entry(&mut archive, "docProps/core.xml").ok();
+        let vba_project = match read_zip_entry_bytes(&mut archive, "xl/vbaProject.bin") {
+            Ok(bytes) => Some(bytes),
+            Err(OfficeError::MissingFile(_)) => None,
+            Err(error) => return Err(error),
+        };
 
         let mut worksheets = HashMap::new();
 
@@ -597,7 +776,7 @@ impl OfficeDocument for XlsxDocument {
             page_setup: PageSetup::default(),
             images: HashMap::new(),
             charts: HashMap::new(),
-            vba_project: None,
+            vba_project,
             tables: HashMap::new(),
         })
     }
@@ -609,7 +788,14 @@ impl OfficeDocument for XlsxDocument {
             let mut zip = ZipWriter::new(cursor);
 
             zip.start_file("[Content_Types].xml", SimpleFileOptions::default())?;
-            zip.write_all(Self::default_content_types_xml().as_bytes())?;
+            let mut content_types = Self::default_content_types_xml();
+            if self.has_vba_macros() {
+                content_types = content_types.replace(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+                    "application/vnd.ms-excel.sheet.macroEnabled.main+xml",
+                ).replace("</Types>", "<Override PartName=\"/xl/vbaProject.bin\" ContentType=\"application/vnd.ms-office.vbaProject\"/></Types>");
+            }
+            zip.write_all(content_types.as_bytes())?;
 
             zip.start_file("_rels/.rels", SimpleFileOptions::default())?;
             zip.write_all(
@@ -623,7 +809,15 @@ impl OfficeDocument for XlsxDocument {
             zip.write_all(self.workbook.as_bytes())?;
 
             zip.start_file("xl/_rels/workbook.xml.rels", SimpleFileOptions::default())?;
-            zip.write_all(Self::workbook_relationships_xml().as_bytes())?;
+            let mut workbook_relationships = Self::workbook_relationships_xml();
+            if let Some(vba) = &self.vba_project {
+                workbook_relationships = workbook_relationships.replace("</Relationships>", "<Relationship Id=\"rIdVba\" Type=\"http://schemas.microsoft.com/office/2006/relationships/vbaProject\" Target=\"vbaProject.bin\"/></Relationships>");
+                zip.write_all(workbook_relationships.as_bytes())?;
+                zip.start_file("xl/vbaProject.bin", SimpleFileOptions::default())?;
+                zip.write_all(vba)?;
+            } else {
+                zip.write_all(workbook_relationships.as_bytes())?;
+            }
 
             for (sheet_name, worksheet_content) in &self.worksheets {
                 let path = format!("xl/worksheets/{}.xml", sheet_name);
@@ -646,10 +840,8 @@ impl OfficeDocument for XlsxDocument {
                 zip.write_all(app.as_bytes())?;
             }
 
-            if let Some(core) = &self.core_properties {
-                zip.start_file("docProps/core.xml", SimpleFileOptions::default())?;
-                zip.write_all(core.as_bytes())?;
-            }
+            zip.start_file("docProps/core.xml", SimpleFileOptions::default())?;
+            zip.write_all(self.create_core_properties().as_bytes())?;
 
             zip.finish()?;
         }

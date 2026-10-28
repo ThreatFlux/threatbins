@@ -17,7 +17,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde-xml-rs = "0.8.2"
 thiserror = "2.0.21"
 anyhow = "1.0.104"
-pulldown-cmark = "0.13.4"
+pulldown-cmark = "0.13.5"
 regex = "1.13.1"
 base64 = "0.23.1"
 chrono = { version = "0.4.45", features = ["serde"] }
@@ -39,7 +39,7 @@ lettre = "0.11.23"
 mail-parser = "0.11.9"
 mime = "0.3.17"
 time = "0.3.55"
-tokio = { version = "1.54.0", features = ["full"] }
+tokio = { version = "1.54.1", features = ["full"] }
 warp = { version = "0.4.3", features = ["server", "multipart", "websocket"] }
 bytes = "1.12.1"
 futures-util = "0.3.34"
