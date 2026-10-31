@@ -88,8 +88,13 @@ async fn create_document(
     match result {
         Ok(content) => {
             let file_id = uuid::Uuid::new_v4().to_string();
-            let filename = format!("{}.{}",
-                req.title.as_ref().unwrap_or(&"document".to_string()).replace(" ", "_").to_lowercase(),
+            let filename = format!(
+                "{}.{}",
+                req.title
+                    .as_ref()
+                    .unwrap_or(&"document".to_string())
+                    .replace(" ", "_")
+                    .to_lowercase(),
                 req.format
             );
 
@@ -106,7 +111,10 @@ async fn create_document(
                 created_at,
             };
 
-            storage.lock().unwrap().insert(file_id.clone(), (content, file_response.clone()));
+            storage
+                .lock()
+                .unwrap()
+                .insert(file_id.clone(), (content, file_response.clone()));
 
             Ok(warp::reply::json(&ApiResponse::success(file_response)))
         }
@@ -137,7 +145,10 @@ async fn convert_document(
                 created_at,
             };
 
-            storage.lock().unwrap().insert(file_id.clone(), (content, file_response.clone()));
+            storage
+                .lock()
+                .unwrap()
+                .insert(file_id.clone(), (content, file_response.clone()));
 
             Ok(warp::reply::json(&ApiResponse::success(file_response)))
         }
@@ -152,13 +163,24 @@ async fn batch_create(
     let mut responses = Vec::new();
 
     for create_req in req.requests {
-        let result = create_mock_document(&create_req.format, &create_req.content, &create_req.title, &create_req.author);
+        let result = create_mock_document(
+            &create_req.format,
+            &create_req.content,
+            &create_req.title,
+            &create_req.author,
+        );
 
         match result {
             Ok(content) => {
                 let file_id = uuid::Uuid::new_v4().to_string();
-                let filename = format!("{}.{}",
-                    create_req.title.as_ref().unwrap_or(&"document".to_string()).replace(" ", "_").to_lowercase(),
+                let filename = format!(
+                    "{}.{}",
+                    create_req
+                        .title
+                        .as_ref()
+                        .unwrap_or(&"document".to_string())
+                        .replace(" ", "_")
+                        .to_lowercase(),
                     create_req.format
                 );
 
@@ -175,11 +197,16 @@ async fn batch_create(
                     created_at,
                 };
 
-                storage.lock().unwrap().insert(file_id.clone(), (content, file_response.clone()));
+                storage
+                    .lock()
+                    .unwrap()
+                    .insert(file_id.clone(), (content, file_response.clone()));
                 responses.push(file_response);
             }
             Err(e) => {
-                return Ok(warp::reply::json(&ApiResponse::<Vec<FileResponse>>::error(e)));
+                return Ok(warp::reply::json(&ApiResponse::<Vec<FileResponse>>::error(
+                    e,
+                )));
             }
         }
     }
@@ -189,16 +216,25 @@ async fn batch_create(
 
 fn get_mime_type(format: &str) -> String {
     match format {
-        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document".to_string(),
+        "docx" => {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document".to_string()
+        }
         "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string(),
-        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation".to_string(),
+        "pptx" => {
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation".to_string()
+        }
         "pdf" => "application/pdf".to_string(),
         "eml" => "message/rfc822".to_string(),
         _ => "application/octet-stream".to_string(),
     }
 }
 
-fn create_mock_document(format: &str, content: &str, title: &Option<String>, author: &Option<String>) -> Result<Vec<u8>, String> {
+fn create_mock_document(
+    format: &str,
+    content: &str,
+    title: &Option<String>,
+    author: &Option<String>,
+) -> Result<Vec<u8>, String> {
     let default_title = "Untitled Document".to_string();
     let default_author = "Unknown Author".to_string();
     let title_str = title.as_ref().unwrap_or(&default_title);
@@ -216,7 +252,11 @@ fn create_mock_document(format: &str, content: &str, title: &Option<String>, aut
     Ok(mock_content.into_bytes())
 }
 
-fn convert_mock_document(content: &str, source_format: &str, target_format: &str) -> Result<Vec<u8>, String> {
+fn convert_mock_document(
+    content: &str,
+    source_format: &str,
+    target_format: &str,
+) -> Result<Vec<u8>, String> {
     let mock_content = format!(
         "CONVERTED DOCUMENT\n\
         ==================\n\
@@ -228,8 +268,10 @@ fn convert_mock_document(content: &str, source_format: &str, target_format: &str
         {}\n\n\
         [This is a mock conversion for testing the API. In a real implementation, \
         this would properly convert between different document formats.]",
-        source_format.to_uppercase(), target_format.to_uppercase(),
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"), content
+        source_format.to_uppercase(),
+        target_format.to_uppercase(),
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        content
     );
 
     Ok(mock_content.into_bytes())
@@ -247,7 +289,10 @@ fn create_mock_docx(title: &str, author: &str, content: &str) -> String {
         {}\n\n\
         [This is a mock DOCX document for testing the API. In a real implementation, \
         this would be a properly formatted Microsoft Word document with XML structure.]",
-        title, author, chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"), content
+        title,
+        author,
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        content
     )
 }
 
@@ -263,7 +308,10 @@ fn create_mock_pdf(title: &str, author: &str, content: &str) -> String {
         {}\n\n\
         [This is a mock PDF document for testing the API. In a real implementation, \
         this would be a properly formatted PDF with binary structure and text layout.]",
-        title, author, chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"), content
+        title,
+        author,
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        content
     )
 }
 
@@ -276,7 +324,8 @@ fn create_mock_xlsx(title: &str, content: &str) -> String {
         Created: {}\n\n\
         Worksheet: Sheet1\n\
         -----------------\n",
-        title, chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
+        title,
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
     );
 
     for (i, row) in rows.iter().enumerate() {
@@ -300,7 +349,9 @@ fn create_mock_pptx(title: &str, author: &str, content: &str) -> String {
         Title: {}\n\
         Author: {}\n\
         Created: {}\n\n",
-        title, author, chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
+        title,
+        author,
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
     );
 
     pptx_content.push_str("Slide 1: Title Slide\n");
@@ -340,7 +391,10 @@ fn create_mock_eml(title: &str, author: &str, content: &str) -> String {
         -------------\n\
         {}\n\n\
         [This is a mock EML document for testing the API.]",
-        author, title, chrono::Utc::now().format("%a, %d %b %Y %H:%M:%S +0000"), content
+        author,
+        title,
+        chrono::Utc::now().format("%a, %d %b %Y %H:%M:%S +0000"),
+        content
     )
 }
 
@@ -352,11 +406,7 @@ async fn download_file(
 
     if let Some((content, file_info)) = storage.get(&file_id) {
         Ok(warp::reply::with_header(
-            warp::reply::with_header(
-                content.clone(),
-                "Content-Type",
-                file_info.mime_type.clone(),
-            ),
+            warp::reply::with_header(content.clone(), "Content-Type", file_info.mime_type.clone()),
             "Content-Disposition",
             format!("attachment; filename=\"{}\"", file_info.filename),
         ))
@@ -429,9 +479,7 @@ async fn main() {
         .allow_methods(vec!["GET", "POST"]);
 
     // Health check endpoint
-    let health = warp::path("health")
-        .and(warp::get())
-        .and_then(health_check);
+    let health = warp::path("health").and(warp::get()).and_then(health_check);
 
     // Create document endpoint
     let create = warp::path("documents")
@@ -492,11 +540,26 @@ async fn main() {
     println!("\n📝 Example usage:");
     println!("  curl -X POST http://localhost:3030/documents \\");
     println!("    -H 'Content-Type: application/json' \\");
-    println!("    -d '{{\"format\":\"pdf\",\"content\":\"Hello World\",\"title\":\"Test Document\"}}'");
+    println!(
+        "    -d '{{\"format\":\"pdf\",\"content\":\"Hello World\",\"title\":\"Test Document\"}}'"
+    );
     println!("\n⚠️  Note: This is a mock implementation for testing API structure.");
     println!("   Real document generation requires the full SDK implementation.");
 
-    warp::serve(routes)
-        .run(([127, 0, 0, 1], 3030))
-        .await;
+    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await;
+}
+
+#[cfg(test)]
+mod dependency_regressions {
+    use super::*;
+
+    #[tokio::test]
+    async fn health_handler_remains_valid_json_over_warp() {
+        let route = warp::path("health").and(warp::get()).and_then(health_check);
+        let response = warp::test::request().path("/health").reply(&route).await;
+        assert_eq!(response.status(), 200);
+        let body: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(body["success"], true);
+        assert_eq!(body["data"]["status"], "OK");
+    }
 }

@@ -5,8 +5,8 @@ use office_sdk::docx::{
 use office_sdk::error::OfficeError;
 use office_sdk::markdown::{InlineElement, MarkdownDocument, MarkdownElement};
 use office_sdk::pdf::{
-    AnnotationType, Color, EncryptionLevel, FormFieldType, PageContent, PdfDocument, PermissionFlags, ShapeType,
-    TextStyle,
+    AnnotationType, Color, EncryptionLevel, FormFieldType, PageContent, PdfDocument,
+    PermissionFlags, ShapeType, TextStyle,
 };
 use office_sdk::pptx::{AnimationType, PptxDocument, SlideSize};
 use office_sdk::utils::{read_zip_entry, read_zip_entry_bytes, validate_office_format};
@@ -16,7 +16,15 @@ use office_sdk::xlsx::{
 use std::io::Cursor;
 use std::io::Write;
 use tempfile::TempDir;
-use zip::{ZipArchive, ZipWriter, write::FileOptions};
+use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
+
+// Encode complete images: a magic header alone is not a valid image fixture.
+fn image_fixture(format: image::ImageFormat, width: u32, height: u32) -> Vec<u8> {
+    let image = image::DynamicImage::ImageRgb8(image::RgbImage::new(width, height));
+    let mut bytes = Cursor::new(Vec::new());
+    image.write_to(&mut bytes, format).unwrap();
+    bytes.into_inner()
+}
 
 #[test]
 fn test_docx_creation_and_parsing() {
@@ -130,10 +138,11 @@ fn test_utils_read_zip_entry() {
         let cursor = Cursor::new(&mut buf);
         let mut zip = ZipWriter::new(cursor);
 
-        zip.start_file("test.txt", FileOptions::default()).unwrap();
+        zip.start_file("test.txt", SimpleFileOptions::default())
+            .unwrap();
         zip.write_all(b"Hello, World!").unwrap();
 
-        zip.start_file("binary.bin", FileOptions::default())
+        zip.start_file("binary.bin", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(&[0x01, 0x02, 0x03, 0x04]).unwrap();
 
@@ -164,7 +173,7 @@ fn test_utils_read_zip_entry_bytes() {
         let cursor = Cursor::new(&mut buf);
         let mut zip = ZipWriter::new(cursor);
 
-        zip.start_file("binary.bin", FileOptions::default())
+        zip.start_file("binary.bin", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(&[0x01, 0x02, 0x03, 0x04]).unwrap();
 
@@ -195,11 +204,11 @@ fn test_utils_validate_office_format() {
         let cursor = Cursor::new(&mut buf);
         let mut zip = ZipWriter::new(cursor);
 
-        zip.start_file("word/document.xml", FileOptions::default())
+        zip.start_file("word/document.xml", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"<document/>").unwrap();
 
-        zip.start_file("[Content_Types].xml", FileOptions::default())
+        zip.start_file("[Content_Types].xml", SimpleFileOptions::default())
             .unwrap();
         zip.write_all(b"<Types/>").unwrap();
 
@@ -1565,8 +1574,8 @@ fn test_xlsx_comprehensive_document() {
     doc.set_category("Testing");
 
     // Set page setup
-    doc.set_page_size(PaperSize::A4);
-    doc.set_orientation(PageOrientation::Landscape);
+    doc.set_page_size(XlsxPaperSize::A4);
+    doc.set_orientation(XlsxPageOrientation::Landscape);
     doc.set_margins(0.75, 0.75, 1.0, 1.0);
     doc.set_scale(90);
 
@@ -1851,12 +1860,7 @@ fn test_pptx_image_support() {
     let mut doc = PptxDocument::new();
 
     // Create a simple PNG image data
-    let png_data = vec![
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1 pixels
-        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
-    ];
+    let png_data = image_fixture(image::ImageFormat::Png, 1, 1);
 
     let image_id = doc
         .add_image_from_bytes(&png_data, "image/png", Some("Slide Image"))
@@ -1971,7 +1975,7 @@ fn test_pptx_slide_types() {
         .unwrap();
 
     // Add an image and create an image slide
-    let png_data = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    let png_data = image_fixture(image::ImageFormat::Png, 1, 1);
     let image_id = doc
         .add_image_from_bytes(&png_data, "image/png", Some("Demo Image"))
         .unwrap();
@@ -2008,7 +2012,7 @@ fn test_pptx_document_statistics() {
         .unwrap();
 
     // Add images and animations
-    let png_data = vec![0x89, 0x50, 0x4E, 0x47];
+    let png_data = image_fixture(image::ImageFormat::Png, 1, 1);
     doc.add_image_from_bytes(&png_data, "image/png", Some("Chart"))
         .unwrap();
 
@@ -2088,7 +2092,7 @@ fn test_pptx_comprehensive_presentation() {
         .unwrap();
 
     // Add image slide
-    let test_image = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // PNG header
+    let test_image = image_fixture(image::ImageFormat::Png, 1, 1);
     let image_id = doc
         .add_image_from_bytes(&test_image, "image/png", Some("Feature Diagram"))
         .unwrap();
@@ -2186,8 +2190,8 @@ fn test_pptx_multiple_images_and_animations() {
     let mut doc = PptxDocument::new();
 
     // Add multiple images of different types
-    let png_data = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-    let jpg_data = vec![0xFF, 0xD8, 0xFF, 0xE0];
+    let png_data = image_fixture(image::ImageFormat::Png, 1, 1);
+    let jpg_data = image_fixture(image::ImageFormat::Jpeg, 1, 1);
 
     let image1_id = doc
         .add_image_from_bytes(&png_data, "image/png", Some("PNG Image"))
@@ -2349,8 +2353,8 @@ fn test_pptx_complex_presentation_workflow() {
         .unwrap();
 
     // Add multiple images
-    let chart_image = vec![0x89, 0x50, 0x4E, 0x47, 0x0D]; // PNG
-    let logo_image = vec![0xFF, 0xD8, 0xFF, 0xE0]; // JPEG
+    let chart_image = image_fixture(image::ImageFormat::Png, 1, 1); // PNG
+    let logo_image = image_fixture(image::ImageFormat::Jpeg, 1, 1); // JPEG
 
     let chart_id = doc
         .add_image_from_bytes(&chart_image, "image/png", Some("Q4 Performance Chart"))
@@ -3096,12 +3100,7 @@ fn test_pdf_comprehensive_document() {
     doc.add_paragraph(0, "This document demonstrates all advanced PDF features including interactive forms, multimedia annotations, embedded images, structured tables, document security, and JavaScript automation.", 100.0, 700.0, 400.0, 12.0).unwrap();
 
     // Add company logo simulation
-    let logo_data = vec![
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR
-        0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x40, // 64x64 pixels
-        0x08, 0x02, 0x00, 0x00, 0x00, 0x25, 0x0B, 0xE6, 0x89,
-    ];
+    let logo_data = image_fixture(image::ImageFormat::Png, 64, 64);
     let logo_id = doc
         .add_image_from_bytes(&logo_data, "image/png", Some("Company Logo"))
         .unwrap();
@@ -3293,6 +3292,15 @@ fn test_pdf_comprehensive_document() {
     .unwrap();
 
     // Add layers for different content types
+    // Include the navigation entries asserted by the statistics check below.
+    let overview = doc.add_bookmark("Overview", 0, 100.0, 750.0).unwrap();
+    doc.add_nested_bookmark(&overview, "Introduction", 0, 100.0, 700.0)
+        .unwrap();
+    doc.add_nested_bookmark(&overview, "Graphics", 0, 100.0, 600.0)
+        .unwrap();
+    doc.add_bookmark("Registration", 1, 100.0, 750.0).unwrap();
+    doc.add_bookmark("Performance Data", 2, 100.0, 950.0)
+        .unwrap();
     doc.add_layer("Text Content", true).unwrap();
     doc.add_layer("Form Fields", true).unwrap();
     doc.add_layer("Annotations", true).unwrap();
@@ -3371,7 +3379,7 @@ fn test_pdf_document_optimization() {
     let _page_id = doc.add_a4_page().unwrap();
 
     // Add images
-    let image_data = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // PNG header
+    let image_data = image_fixture(image::ImageFormat::Png, 1, 1);
     let used_image_id = doc
         .add_image_from_bytes(&image_data, "image/png", Some("Used Image"))
         .unwrap();
@@ -3666,7 +3674,7 @@ fn test_pdf_advanced_features_integration() {
     .unwrap();
 
     // Add image
-    let test_image = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // PNG header
+    let test_image = image_fixture(image::ImageFormat::Png, 1, 1);
     let image_id = doc
         .add_image_from_bytes(&test_image, "image/png", Some("Test Chart"))
         .unwrap();
