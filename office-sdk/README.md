@@ -373,3 +373,16 @@ This SDK is designed for defensive security tasks only. It focuses on:
 - Input validation
 
 Do not use for malicious document creation or credential harvesting.
+
+## Shared structured report rendering
+
+The additive [`report` API](docs/report-rendering.md) renders one immutable,
+versioned document to PDF, offline HTML and native editable widescreen
+PowerPoint, with bounded layout, source/output digests, speaker notes and
+structural inspection. From `office-sdk/`, run:
+
+```sh
+cargo run --example report_render -- tests/fixtures/executive-report.json output/reports
+```
+
+Service consumers can enable only `report` with `default-features = false`.

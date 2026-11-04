@@ -7,9 +7,11 @@ pub enum OfficeError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[cfg(feature = "report")]
     #[error("ZIP error: {0}")]
     Zip(#[from] zip::result::ZipError),
 
+    #[cfg(feature = "report")]
     #[error("XML parsing error: {0}")]
     XmlParsing(#[from] quick_xml::Error),
 
@@ -25,6 +27,7 @@ pub enum OfficeError {
     #[error("Unsupported feature: {0}")]
     UnsupportedFeature(String),
 
+    #[cfg(feature = "report")]
     #[error("Image processing error: {0}")]
     Image(#[from] image::error::ImageError),
 

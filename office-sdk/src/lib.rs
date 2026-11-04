@@ -1,14 +1,25 @@
+#[cfg(feature = "full")]
 pub mod docx;
+#[cfg(feature = "full")]
 pub mod eml;
 pub mod error;
+#[cfg(feature = "full")]
 pub mod files;
+#[cfg(feature = "full")]
 pub mod markdown;
+#[cfg(feature = "full")]
 pub mod pdf;
+#[cfg(feature = "report")]
 pub mod pptx;
+#[cfg(feature = "report-model")]
+pub mod report;
+#[cfg(feature = "report")]
 pub mod utils;
+#[cfg(feature = "report")]
 pub mod xlsx;
 
 pub use error::{OfficeError, Result};
+#[cfg(feature = "full")]
 pub use files::FilesAPI;
 
 use std::path::Path;

@@ -577,10 +577,7 @@ impl PptxDocument {
 
     fn update_presentation_xml(&mut self) {
         let slide_count = self.slides.len();
-        if slide_count == 0 {
-            return;
-        }
-
+        let (width, height) = self.slide_size.dimensions();
         let mut slides_xml = String::new();
         for i in 1..=slide_count {
             slides_xml.push_str(&format!(
@@ -599,10 +596,10 @@ impl PptxDocument {
     </p:sldMasterIdLst>
     <p:sldIdLst>
 {}    </p:sldIdLst>
-    <p:sldSz cx="9144000" cy="6858000" type="screen4x3"/>
+    <p:sldSz cx="{}" cy="{}"/>
     <p:notesSz cx="6858000" cy="9144000"/>
 </p:presentation>"#,
-            slides_xml
+            slides_xml, width, height
         );
     }
 
@@ -614,7 +611,7 @@ impl PptxDocument {
     </p:sldMasterIdLst>
     <p:sldIdLst>
     </p:sldIdLst>
-    <p:sldSz cx="9144000" cy="6858000" type="screen4x3"/>
+    <p:sldSz cx="12192000" cy="6858000"/>
     <p:notesSz cx="6858000" cy="9144000"/>
 </p:presentation>"#.to_string()
     }
@@ -871,6 +868,7 @@ impl OfficeDocument for PptxDocument {
         let mut images = HashMap::new();
         let mut notes = HashMap::new();
         let animations = Self::read_animation_extension(&presentation)?;
+        let slide_size = Self::read_slide_size(&presentation)?;
 
         // Read slides
         for i in 0..archive.len() {
@@ -1009,7 +1007,7 @@ impl OfficeDocument for PptxDocument {
             modified,
             last_modified_by,
             revision,
-            slide_size: SlideSize::default(),
+            slide_size,
             images,
             animations,
             vba_project,
@@ -1189,6 +1187,57 @@ impl OfficeDocument for PptxDocument {
 }
 
 impl PptxDocument {
+    fn read_slide_size(xml: &str) -> Result<SlideSize> {
+        let mut reader = Reader::from_str(xml);
+        loop {
+            match reader.read_event()? {
+                Event::Empty(element) | Event::Start(element)
+                    if element.local_name().as_ref() == "sldSz" =>
+                {
+                    let mut width = None;
+                    let mut height = None;
+                    for attr in element.attributes() {
+                        let attr = attr.map_err(|_| {
+                            OfficeError::InvalidFormat("Invalid slide size attribute".into())
+                        })?;
+                        match attr.key.as_ref() {
+                            "cx" => width = attr.value.parse::<u32>().ok(),
+                            "cy" => height = attr.value.parse::<u32>().ok(),
+                            _ => {}
+                        }
+                    }
+                    let dimensions = match (width, height) {
+                        (Some(w), Some(h)) if w > 0 && h > 0 => (w, h),
+                        _ => {
+                            return Err(OfficeError::InvalidFormat(
+                                "Invalid slide dimensions".into(),
+                            ));
+                        }
+                    };
+                    for known in [
+                        SlideSize::Standard4x3,
+                        SlideSize::Widescreen16x9,
+                        SlideSize::A3,
+                        SlideSize::A4,
+                        SlideSize::B4ISO,
+                        SlideSize::B5ISO,
+                        SlideSize::Banner,
+                    ] {
+                        if known.dimensions() == dimensions {
+                            return Ok(known);
+                        }
+                    }
+                    return Ok(SlideSize::Custom {
+                        width: dimensions.0,
+                        height: dimensions.1,
+                    });
+                }
+                Event::Eof => return Ok(SlideSize::default()),
+                _ => {}
+            }
+        }
+    }
+
     // Preserve the SDK's animation model in an OOXML extension. This retains
     // definitions across SDK round trips; it does not synthesize native timing
     // trees or claim PowerPoint animation playback support.

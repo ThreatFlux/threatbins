@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "document_id": "board-report-2026-q3",
+  "revision": "7",
+  "report_type": "executive_summary",
+  "title": "Executive Risk Report",
+  "subtitle": "Example organization · reviewed evidence fixture",
+  "period": "2026-07-01 to 2026-10-01 (UTC, end exclusive)",
+  "scope": "Example organization · Production – West / Développement / Защита",
+  "comparison": "Previous period · same recorded population",
+  "provenance": {
+    "evidence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sources": [
+      {
+        "id": "coverage:batch-17",
+        "revision": "pinned-17"
+      },
+      {
+        "id": "report:previous",
+        "revision": "6"
+      }
+    ]
+  },
+  "definitions": [
+    {
+      "term": "Defense readiness",
+      "meaning": "Visibility, quality-adjusted Detection and Intelligence Coverage for the selected scope."
+    },
+    {
+      "term": "Missing observations",
+      "meaning": "Unavailable data remains a gap and is never interpreted as zero."
+    }
+  ],
+  "limitations": [
+    "Synthetic fixture; no production customer data.",
+    "One observation is missing. Scope changes are disclosed; no historical interpolation."
+  ],
+  "sections": [
+    {
+      "id": "summary",
+      "title": "Bottom line",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Readiness improved to 64 from 61. Production – West remains the weakest measured zone at 52. The target is 75. A reviewer supplied this wording; the renderer does not calculate or approve it."
+        }
+      ]
+    },
+    {
+      "id": "risk",
+      "title": "Business risks and environment context",
+      "blocks": [
+        {
+          "type": "table",
+          "table": {
+            "caption": "Frozen risk facts · score, target and coverage",
+            "headers": [
+              "Risk / full environment name",
+              "Readiness",
+              "Target",
+              "Coverage / limitation"
+            ],
+            "rows": [
+              [
+                "Ransomware · Production – West and the customer-facing transaction processing environment",
+                "64",
+                "75",
+                "89 of 92 eligible days measured"
+              ],
+              [
+                "Data exposure · Développement / Защита",
+                "52",
+                "75",
+                "Missing collector observation; lowest measured zone disclosed"
+              ],
+              [
+                "Unmeasured subsidiary",
+                "Not measured",
+                "75",
+                "No data; excluded, not zero"
+              ]
+            ]
+          }
+        },
+        {
+          "type": "chart",
+          "chart": {
+            "title": "Recorded readiness trend",
+            "description": "Recorded observations only. A missing point breaks the line. Target and bands are frozen with the report.",
+            "labels": [
+              "2026-07-01",
+              "2026-07-02",
+              "2026-07-03",
+              "2026-07-04"
+            ],
+            "series": [
+              {
+                "name": "Organization readiness",
+                "values": [
+                  61,
+                  null,
+                  59,
+                  64
+                ]
+              }
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "target": 75,
+            "bands": [
+              {
+                "label": "Critical",
+                "start": 0
+              },
+              {
+                "label": "At risk",
+                "start": 40
+              },
+              {
+                "label": "Developing",
+                "start": 60
+              },
+              {
+                "label": "Defensible",
+                "start": 75
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "actions",
+      "title": "Evidence to action",
+      "blocks": [
+        {
+          "type": "table",
+          "table": {
+            "caption": "Next-period work · linked Tasks",
+            "headers": [
+              "Task",
+              "Owner / context",
+              "Evidence"
+            ],
+            "rows": [
+              [
+                "task-001 · Improve collector coverage",
+                "Security team",
+                "Coverage gap: zone-west-source"
+              ],
+              [
+                "task-002 · Validate priority detections",
+                "Detection engineering",
+                "Task completion is distinct from human report approval"
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
