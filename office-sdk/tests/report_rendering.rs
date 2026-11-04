@@ -389,3 +389,104 @@ fn inspection_rejects_nested_workbook_external_relationships() {
     let modified = rebind_bytes(rendered, bytes);
     assert!(inspect_report(&modified.bytes, &modified.manifest).is_err());
 }
+
+#[test]
+fn inspection_rejects_html_parser_comment_differentials() {
+    let rendered = render(&fixture(), ReportFormat::Html);
+    let original = String::from_utf8(rendered.bytes.clone()).unwrap();
+    for addition in [
+        "<!-- --!><meta http-equiv=\"refresh\" content=\"0;url=https://example.com\"> -->",
+        "<!--><meta http-equiv=\"refresh\" content=\"0;url=https://example.com\"> -->",
+        "<![CDATA[<meta http-equiv=\"refresh\" content=\"0;url=https://example.com\">]]>",
+    ] {
+        let bytes = original
+            .replace("</main>", &format!("{addition}</main>"))
+            .into_bytes();
+        let modified = rebind_bytes(rendered.clone(), bytes);
+        assert!(
+            inspect_report(&modified.bytes, &modified.manifest).is_err(),
+            "accepted {addition}"
+        );
+    }
+}
+
+#[test]
+fn long_identity_footers_fail_instead_of_clipping() {
+    let mut d = fixture();
+    d.document_id = "W".repeat(256);
+    d.revision = "W".repeat(256);
+    validate_report_document(&d, &ReportLimits::default()).unwrap();
+    for format in [ReportFormat::Pdf, ReportFormat::Pptx] {
+        assert!(
+            render_report(&d, &ReportRenderOptions::new(format)).is_err(),
+            "accepted oversized {format:?} footer"
+        );
+    }
+}
+
+#[test]
+fn pdf_chart_identifies_each_series_on_the_chart_page() {
+    let mut d = fixture();
+    let chart = d
+        .sections
+        .iter_mut()
+        .flat_map(|s| &mut s.blocks)
+        .find_map(|b| match b {
+            ReportBlock::Chart { chart } => Some(chart),
+            _ => None,
+        })
+        .unwrap();
+    let mut other = chart.series[0].clone();
+    other.name = "Prior readiness".into();
+    chart.series.push(other);
+    let r = render(&d, ReportFormat::Pdf);
+    let pdf = lopdf::Document::load_mem(&r.bytes).unwrap();
+    let chart_page = (1..=pdf.get_pages().len() as u32)
+        .map(|p| pdf.extract_text(&[p]).unwrap())
+        .find(|text| text.contains("following chart-data table"))
+        .unwrap();
+    for name in ["Organization readiness", "Prior readiness"] {
+        assert!(
+            chart_page.contains(name),
+            "chart lacks color key for {name}: {chart_page}"
+        );
+    }
+}
+
+#[test]
+fn pptx_identity_footer_wraps_within_its_measured_box() {
+    let mut d = fixture();
+    d.document_id = "WW ".repeat(60);
+    let r = render(&d, ReportFormat::Pptx);
+    let slide = zip_part(&r.bytes, "ppt/slides/slide1.xml");
+    let footer = slide
+        .split("<p:cNvPr id=\"4\"")
+        .nth(1)
+        .unwrap()
+        .split("</p:sp>")
+        .next()
+        .unwrap();
+    assert!(
+        footer.matches("<a:p>").count() >= 2,
+        "identity must wrap rather than extend beyond slide width"
+    );
+}
+#[test]
+fn pptx_rejects_oversized_identity_footer() {
+    let mut d = fixture();
+    d.document_id = "W".repeat(256);
+    d.revision = "W".repeat(256);
+    assert!(render_report(&d, &ReportRenderOptions::new(ReportFormat::Pptx)).is_err());
+}
+
+#[test]
+fn inspection_rejects_case_insensitive_duplicate_html_attributes() {
+    let rendered = render(&fixture(), ReportFormat::Html);
+    let original = String::from_utf8(rendered.bytes.clone()).unwrap();
+    let modified = original.replace(
+        "<meta http-equiv=",
+        "<meta HTTP-EQUIV=\"refresh\" CONTENT=\"0;url=https://example.com\" http-equiv=",
+    );
+    let modified = rebind_bytes(rendered, modified.into_bytes());
+    assert!(inspect_report(&modified.bytes, &modified.manifest).is_err());
+}

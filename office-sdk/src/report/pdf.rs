@@ -88,7 +88,7 @@ pub(crate) fn render(d: &ReportDocument, pages: &[Page], font: &[u8]) -> ReportR
                     line(&mut ops, LEFT, y, LEFT + BODY_WIDTH, y, "CBD5E1");
                 }
             }
-            PageBody::Chart(c) => chart(&mut ops, &handle, c),
+            PageBody::Chart(c) => chart(&mut ops, &handle, c, &metrics)?,
         }
         let footer = format!(
             "{} / {}  ·  {}  ·  revision {}",
@@ -99,12 +99,14 @@ pub(crate) fn render(d: &ReportDocument, pages: &[Page], font: &[u8]) -> ReportR
         );
         // The complete IDs are also in the provenance pages. Reject enormous
         // footer fields rather than silently truncate their visible binding.
-        for (n, l) in metrics
-            .wrap(&footer, 8.0, BODY_WIDTH)?
-            .iter()
-            .take(3)
-            .enumerate()
-        {
+        let footer_lines = metrics.wrap(&footer, 8.0, BODY_WIDTH)?;
+        if footer_lines.len() > 3 {
+            return Err(invalid(
+                "document_id/revision",
+                "page footer must fit within three lines",
+            ));
+        }
+        for (n, l) in footer_lines.iter().enumerate() {
             text(
                 &mut ops,
                 &handle,
@@ -201,9 +203,48 @@ fn rect(ops: &mut Vec<Op>, x: f64, y: f64, w: f64, h: f64, hex: &str) {
         },
     ]);
 }
-fn chart(ops: &mut Vec<Op>, font: &PdfFontHandle, c: &ReportChart) {
+fn chart(
+    ops: &mut Vec<Op>,
+    font: &PdfFontHandle,
+    c: &ReportChart,
+    metrics: &FontMetrics,
+) -> ReportResult<()> {
+    // A measured two-column color key identifies every plotted series on this
+    // page; the following data table supplies its complete observations.
+    let mut legend_y = BODY_TOP;
+    for (row, series) in c.series.chunks(2).enumerate() {
+        let labels = series
+            .iter()
+            .map(|s| metrics.wrap(&s.name, 10.0, BODY_WIDTH / 2.0 - 36.0))
+            .collect::<ReportResult<Vec<_>>>()?;
+        let height = labels.iter().map(Vec::len).max().unwrap_or(1) as f64 * 12.0 + 6.0;
+        if legend_y + height > 270.0 {
+            return Err(invalid(
+                "chart.series.name",
+                "PDF chart legend exceeds the measured area",
+            ));
+        }
+        for (col, lines) in labels.iter().enumerate() {
+            let left = LEFT + col as f64 * BODY_WIDTH / 2.0;
+            let color = COLORS[(row * 2 + col) % COLORS.len()];
+            rect(ops, left, legend_y - 7.0, 16.0, 4.0, color);
+            for (line_no, label) in lines.iter().enumerate() {
+                text(
+                    ops,
+                    font,
+                    label,
+                    left + 24.0,
+                    legend_y + line_no as f64 * 12.0,
+                    10.0,
+                    "172033",
+                );
+            }
+        }
+        legend_y += height;
+    }
+    let plot_top = legend_y + 16.0;
     let x = |i: usize| 100.0 + i as f64 / c.labels.len().saturating_sub(1).max(1) as f64 * 780.0;
-    let y = |v: f64| 440.0 - (v - c.minimum) / (c.maximum - c.minimum) * 280.0;
+    let y = |v: f64| 440.0 - (v - c.minimum) / (c.maximum - c.minimum) * (440.0 - plot_top);
     for i in 0..=4 {
         let v = c.minimum + (c.maximum - c.minimum) * i as f64 / 4.0;
         line(ops, 100.0, y(v), 880.0, y(v), "CBD5E1");
@@ -248,4 +289,5 @@ fn chart(ops: &mut Vec<Op>, font: &PdfFontHandle, c: &ReportChart) {
         10.0,
         "525252",
     );
+    Ok(())
 }

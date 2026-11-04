@@ -7,20 +7,20 @@ schema-1 document. No customer data or live report approval is involved.
 Validated locally before the SDK implementation commit:
 
 - Repository-owned `make ci` passed on Rust 1.99.1 and MSRV 1.95.0: formatting,
-  all-target/all-feature checks, **146 passing tests**, documentation and both
+  all-target/all-feature checks, **152 passing tests**, documentation and both
   lockfile audits. `paste` has the inherited allowed unmaintained warning;
   there are no audit vulnerabilities. Patched the inherited
   `pulldown-cmark` 0.13.5 advisory by updating to 0.13.6.
 - Contract-only `report-model` tests passed (2), and its normal dependency
   tree excludes PDF/Office/ZIP/font/image/service code.
-- Report-only rendering tests passed (13), including shared document digests,
+- Report-only rendering tests passed (19), including shared document digests,
   PDF text/Unicode parity, native editable chart/table/workbook parts, missing
   point semantics, HTML escaping, source/output limits, changed-byte rejection,
   long-row pagination, and new/imported slide-dimension preservation.
 - Rust 1.97.1 consumer checks passed independently for both `report` and
   `report-model` with default features disabled. The report-only normal tree
   excludes REST/email/CLI/Markdown and AVIF dependencies.
-- Independent review added failing-before/passing-after checks for nested workbook expansion and mixed-case active HTML, plus external workbook links, event attributes and fake policy declarations. Inspection now budgets nested packages and validates the static HTML profile structurally.
+- Independent review added failing-before/passing-after checks for nested workbook expansion and mixed-case active HTML, plus external workbook links, event attributes and fake policy declarations. Inspection now budgets nested packages and validates the static HTML profile structurally. Further review proved and fixed comment/CDATA and duplicate-attribute HTML parser differences, missing PDF series legends, and clipped/unwrapped identity footers; measured layout checks fail explicitly on excess footer/legend content.
 - The example produced an actual **10-page PDF**, continuous offline HTML and
   **10-slide native PPTX**. PDF text extraction retains supplied numbers,
   accented/Cyrillic names, comparison, limitations and provenance. Rendered

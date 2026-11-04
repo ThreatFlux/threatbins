@@ -62,21 +62,25 @@ pub(crate) fn render(
                 charts.push((i + 1, c));
             }
         }
-        shapes.push_str(&textbox(
-            4,
-            &[format!(
+        let footer = metrics.wrap(
+            &format!(
                 "{} / {} · {} · revision {}",
                 i + 1,
                 pages.len(),
                 d.document_id,
                 d.revision
-            )],
-            LEFT,
-            500.0,
-            BODY_WIDTH,
-            24.0,
+            ),
             8.0,
-            "525252",
+            BODY_WIDTH,
+        )?;
+        if footer.len() > 2 {
+            return Err(invalid(
+                "document_id/revision",
+                "slide footer must fit within two lines",
+            ));
+        }
+        shapes.push_str(&textbox(
+            4, &footer, LEFT, 500.0, BODY_WIDTH, 36.0, 8.0, "525252",
         ));
         deck.slides.insert(id, slide(&shapes));
     }

@@ -108,7 +108,10 @@ There are at most 128 sections, 256 blocks per section, 8 table columns and 8
 chart series. Axis and band values must be finite, increasing/in-range where
 applicable. Nonrectangular tables, incompatible point counts, XML-illegal
 controls and bidi override characters fail before rendering. Oversized titles
-or table headers that cannot fit safely also fail rather than clip. The SDK
+or table headers that cannot fit safely also fail rather than clip. PDF charts
+include a measured color key for each series; legends that exceed the available
+area fail explicitly. Identity footers wrap within three PDF lines or two PPTX
+lines and fail if their complete binding cannot fit. The SDK
 never truncates a source row or substitutes zero for missing data.
 
 Noto Sans Regular is bundled with SIL OFL 1.1 license and pinned source metadata
@@ -134,7 +137,9 @@ not grant rights to embed them: the caller must supply an appropriate license.
 hash/size and format metadata, parses the PDF/page count, checks the offline
 HTML binding, and parses the PPTX XML, all internal relationship targets,
 widescreen geometry, slide count and embedded chart workbooks. The inspector
-bounds archive parts/expanded bytes and rejects external links/DTD. It is a
+bounds archive parts/expanded bytes and rejects external links/DTD. Its static
+HTML profile rejects comments, CDATA and case-insensitive duplicate attributes
+to avoid differences between XML tokenization and browser parsing. It is a
 structural check; it never claims human approval, numerical correctness of the
 source or pixel-perfect visual acceptance. PowerPoint editing/rendering and
 visual QA remain acceptance evidence for a consuming report template.

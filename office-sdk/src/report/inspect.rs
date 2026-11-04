@@ -1,6 +1,6 @@
 use super::*;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     io::{Cursor, Read},
     path::{Component, Path, PathBuf},
 };
@@ -338,10 +338,11 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
                 }
                 let mut equivalent = None;
                 let mut content = None;
+                let mut names = BTreeSet::new();
                 for attr in e.attributes() {
                     let attr = attr.map_err(|_| invalid("html", "bad HTML attribute"))?;
                     let name = attr.key.as_ref().to_ascii_lowercase();
-                    if !ATTRS.contains(&name.as_str()) {
+                    if !names.insert(name.clone()) || !ATTRS.contains(&name.as_str()) {
                         return Err(invalid("html", "unsupported or active HTML attribute"));
                     }
                     let value = attr
@@ -376,6 +377,12 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
             }
             Event::PI(_) | Event::Decl(_) => {
                 return Err(invalid("html", "unsupported HTML instruction"));
+            }
+            Event::Comment(_) | Event::CData(_) => {
+                return Err(invalid(
+                    "html",
+                    "comments and CDATA are not part of the report profile",
+                ));
             }
             Event::Eof => break,
             _ => {}
