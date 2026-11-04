@@ -41,49 +41,15 @@ pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<R
         }
         ReportFormat::Html => {
             let h = std::str::from_utf8(bytes).map_err(|_| invalid("html", "not UTF-8"))?;
-            if !h.starts_with("<!doctype html>")
-                || !h.ends_with("</html>")
-                || !h.contains("Content-Security-Policy")
-                || h.contains("<script")
-                || h.contains("<iframe")
-                || h.contains("<object")
-                || h.contains("<link")
-            {
-                return Err(invalid("html", "not the offline safe report document"));
-            }
-            if !h.contains(&manifest.document_sha256) {
-                return Err(invalid("html", "missing document binding"));
-            }
+            inspect_html(h, &manifest.document_sha256)?;
             result
                 .structural_checks
                 .push("UTF-8 offline HTML with document binding and no active content".into());
         }
         ReportFormat::Pptx => {
-            let mut z = zip::ZipArchive::new(Cursor::new(bytes))?;
-            if z.len() > 10_000 {
-                return Err(ReportError::LimitExceeded("PPTX parts".into()));
-            }
-            let mut parts = BTreeMap::new();
             let mut expanded = 0u64;
-            for i in 0..z.len() {
-                let mut entry = z.by_index(i)?;
-                expanded = expanded
-                    .checked_add(entry.size())
-                    .ok_or_else(|| ReportError::LimitExceeded("expanded PPTX".into()))?;
-                if expanded > 128 * 1024 * 1024 {
-                    return Err(ReportError::LimitExceeded("expanded PPTX".into()));
-                }
-                let name = entry.name()?.into_owned();
-                if name.starts_with('/')
-                    || name.split('/').any(|s| s == "..")
-                    || parts.contains_key(&name)
-                {
-                    return Err(invalid("pptx", "unsafe or duplicate package path"));
-                }
-                let mut data = Vec::new();
-                entry.read_to_end(&mut data)?;
-                parts.insert(name, data);
-            }
+            let mut part_count = 0usize;
+            let parts = read_package(bytes, &mut expanded, &mut part_count)?;
             for (name, data) in &parts {
                 if name.ends_with(".xml") || name.ends_with(".rels") {
                     parse_xml(data)?;
@@ -128,12 +94,18 @@ pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<R
             }
             for (name, data) in &parts {
                 if name.starts_with("ppt/embeddings/") && name.ends_with(".xlsx") {
-                    let mut workbook = zip::ZipArchive::new(Cursor::new(data))?;
-                    let mut sheet = String::new();
-                    workbook
-                        .by_name("xl/worksheets/sheet1.xml")?
-                        .read_to_string(&mut sheet)?;
-                    parse_xml(sheet.as_bytes())?;
+                    let workbook = read_package(data, &mut expanded, &mut part_count)?;
+                    if !workbook.contains_key("xl/worksheets/sheet1.xml") {
+                        return Err(invalid("xlsx", "missing chart worksheet"));
+                    }
+                    for (part, content) in &workbook {
+                        if part.ends_with(".xml") || part.ends_with(".rels") {
+                            parse_xml(content)?;
+                        }
+                        if part.ends_with(".rels") {
+                            check_rels(part, content, &workbook)?;
+                        }
+                    }
                 }
             }
             result.structural_checks.extend([
@@ -226,6 +198,191 @@ fn check_rels(name: &str, data: &[u8], parts: &BTreeMap<String, Vec<u8>>) -> Rep
             _ => {}
         }
         buf.clear();
+    }
+    Ok(())
+}
+
+const EXPANDED_PACKAGE_LIMIT: u64 = 128 * 1024 * 1024;
+const PACKAGE_PART_LIMIT: usize = 10_000;
+
+/// Nested workbooks consume the same resource budget as the outer presentation.
+fn read_package(
+    bytes: &[u8],
+    expanded: &mut u64,
+    part_count: &mut usize,
+) -> ReportResult<BTreeMap<String, Vec<u8>>> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
+    *part_count = part_count
+        .checked_add(archive.len())
+        .ok_or_else(|| ReportError::LimitExceeded("package parts".into()))?;
+    if *part_count > PACKAGE_PART_LIMIT {
+        return Err(ReportError::LimitExceeded("package parts".into()));
+    }
+    let mut parts = BTreeMap::new();
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i)?;
+        let name = entry.name()?.into_owned();
+        if name.starts_with('/')
+            || name.contains('\\')
+            || name.split('/').any(|s| s == "..")
+            || parts.contains_key(&name)
+        {
+            return Err(invalid("package", "unsafe or duplicate package path"));
+        }
+        let remaining = EXPANDED_PACKAGE_LIMIT.saturating_sub(*expanded);
+        if entry.size() > remaining {
+            return Err(ReportError::LimitExceeded("expanded package".into()));
+        }
+        let mut data = Vec::new();
+        entry.by_ref().take(remaining + 1).read_to_end(&mut data)?;
+        if data.len() as u64 > remaining {
+            return Err(ReportError::LimitExceeded("expanded package".into()));
+        }
+        *expanded += data.len() as u64;
+        parts.insert(name, data);
+    }
+    Ok(parts)
+}
+
+fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
+    use quick_xml::events::Event;
+    const CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
+    const TAGS: &[&str] = &[
+        "html",
+        "head",
+        "meta",
+        "title",
+        "style",
+        "body",
+        "main",
+        "header",
+        "p",
+        "h1",
+        "h2",
+        "h3",
+        "dl",
+        "dt",
+        "dd",
+        "section",
+        "figure",
+        "figcaption",
+        "svg",
+        "desc",
+        "rect",
+        "path",
+        "text",
+        "circle",
+        "div",
+        "table",
+        "caption",
+        "thead",
+        "tr",
+        "th",
+        "tbody",
+        "td",
+        "footer",
+        "ul",
+        "li",
+    ];
+    const ATTRS: &[&str] = &[
+        "class",
+        "lang",
+        "charset",
+        "name",
+        "content",
+        "http-equiv",
+        "viewbox",
+        "role",
+        "xmlns",
+        "x",
+        "y",
+        "width",
+        "height",
+        "fill",
+        "opacity",
+        "d",
+        "stroke",
+        "stroke-dasharray",
+        "stroke-width",
+        "font-size",
+        "cx",
+        "cy",
+        "r",
+        "scope",
+    ];
+    if !html.starts_with("<!doctype html>")
+        || !html.ends_with("</html>")
+        || !html.contains(document_sha256)
+    {
+        return Err(invalid("html", "not the bound offline report document"));
+    }
+    let mut reader = quick_xml::Reader::from_str(html);
+    // HTML's void meta elements do not have XML end tags. Tokenize attributes
+    // structurally while enforcing the report profile, rather than searching
+    // for case-sensitive active-tag substrings or a CSP mention in a comment.
+    reader.config_mut().check_end_names = false;
+    let mut in_head = false;
+    let mut policy_seen = false;
+    loop {
+        match reader.read_event().map_err(crate::OfficeError::from)? {
+            Event::Start(e) | Event::Empty(e) => {
+                let tag = e.name().as_ref().to_ascii_lowercase();
+                if !TAGS.contains(&tag.as_str()) {
+                    return Err(invalid("html", "unsupported or active HTML element"));
+                }
+                if tag == "head" {
+                    in_head = true;
+                }
+                if matches!(tag.as_str(), "style" | "body") && !policy_seen {
+                    return Err(invalid("html", "offline policy must precede content"));
+                }
+                let mut equivalent = None;
+                let mut content = None;
+                for attr in e.attributes() {
+                    let attr = attr.map_err(|_| invalid("html", "bad HTML attribute"))?;
+                    let name = attr.key.as_ref().to_ascii_lowercase();
+                    if !ATTRS.contains(&name.as_str()) {
+                        return Err(invalid("html", "unsupported or active HTML attribute"));
+                    }
+                    let value = attr
+                        .normalized_value(quick_xml::XmlVersion::Explicit1_0)
+                        .map_err(crate::OfficeError::from)?
+                        .into_owned();
+                    if name == "http-equiv" {
+                        equivalent = Some(value);
+                    } else if name == "content" {
+                        content = Some(value);
+                    }
+                }
+                if let Some(equivalent) = equivalent {
+                    if tag != "meta"
+                        || !in_head
+                        || policy_seen
+                        || !equivalent.eq_ignore_ascii_case("Content-Security-Policy")
+                        || content.as_deref() != Some(CSP)
+                    {
+                        return Err(invalid("html", "unsupported or missing offline policy"));
+                    }
+                    policy_seen = true;
+                }
+            }
+            Event::End(e) => {
+                if e.name().as_ref().eq_ignore_ascii_case("head") {
+                    in_head = false;
+                }
+            }
+            Event::DocType(value) if !value.as_ref().eq_ignore_ascii_case("html") => {
+                return Err(invalid("html", "unsupported doctype"));
+            }
+            Event::PI(_) | Event::Decl(_) => {
+                return Err(invalid("html", "unsupported HTML instruction"));
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if !policy_seen {
+        return Err(invalid("html", "missing offline policy"));
     }
     Ok(())
 }

@@ -278,3 +278,114 @@ fn imported_standard_and_custom_dimensions_survive_new_slides() {
         );
     }
 }
+
+fn rewrite_zip(bytes: &[u8], mut replace: impl FnMut(&str, Vec<u8>) -> Vec<u8>) -> Vec<u8> {
+    use std::io::Write;
+    let mut source = ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let mut target = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for i in 0..source.len() {
+        let mut entry = source.by_index(i).unwrap();
+        let name = entry.name().unwrap().into_owned();
+        let mut data = Vec::new();
+        entry.read_to_end(&mut data).unwrap();
+        target
+            .start_file(
+                &name,
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Deflated),
+            )
+            .unwrap();
+        target.write_all(&replace(&name, data)).unwrap();
+    }
+    target.finish().unwrap().into_inner()
+}
+fn rebind_bytes(mut rendered: RenderedReport, bytes: Vec<u8>) -> RenderedReport {
+    use sha2::{Digest, Sha256};
+    rendered.manifest.byte_size = bytes.len();
+    rendered.manifest.output_sha256 = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    rendered.bytes = bytes;
+    rendered
+}
+#[test]
+fn inspection_rejects_nested_workbook_expansion() {
+    let rendered = render(&fixture(), ReportFormat::Pptx);
+    let bytes = rewrite_zip(&rendered.bytes, |name, data| {
+        if !name.ends_with(".xlsx") {
+            return data;
+        }
+        rewrite_zip(&data, |inner, original| {
+            if inner != "xl/worksheets/sheet1.xml" {
+                return original;
+            }
+            let mut expanded = b"<worksheet>".to_vec();
+            expanded.resize(129 * 1024 * 1024, b' ');
+            expanded.extend_from_slice(b"</worksheet>");
+            expanded
+        })
+    });
+    let modified = rebind_bytes(rendered, bytes);
+    assert!(
+        matches!(
+            inspect_report(&modified.bytes, &modified.manifest),
+            Err(ReportError::LimitExceeded(_))
+        ),
+        "embedded workbook expansion must share the bounded archive budget"
+    );
+}
+#[test]
+fn inspection_rejects_active_html_with_mixed_case_tags() {
+    let rendered = render(&fixture(), ReportFormat::Html);
+    let original = String::from_utf8(rendered.bytes.clone()).unwrap();
+    let bytes = original
+        .replace("</main>", "<ScRiPt>alert(1)</ScRiPt></main>")
+        .into_bytes();
+    let modified = rebind_bytes(rendered, bytes);
+    assert!(
+        inspect_report(&modified.bytes, &modified.manifest).is_err(),
+        "HTML active-content inspection must follow HTML's case-insensitive tag semantics"
+    );
+}
+
+#[test]
+fn inspection_rejects_active_html_attributes_and_fake_policy() {
+    let rendered = render(&fixture(), ReportFormat::Html);
+    let original = String::from_utf8(rendered.bytes.clone()).unwrap();
+    for addition in [
+        "<svg onload=\"alert(1)\"></svg>",
+        "<meta http-equiv=\"refresh\" content=\"0;url=https://example.com\">",
+    ] {
+        let bytes = original
+            .replace("</main>", &format!("{addition}</main>"))
+            .into_bytes();
+        let modified = rebind_bytes(rendered.clone(), bytes);
+        assert!(inspect_report(&modified.bytes, &modified.manifest).is_err());
+    }
+    let start = original
+        .find("<meta http-equiv=\"Content-Security-Policy\"")
+        .unwrap();
+    let end = start + original[start..].find('>').unwrap() + 1;
+    let mut fake = original;
+    fake.replace_range(start..end, "<!-- Content-Security-Policy -->");
+    let modified = rebind_bytes(rendered, fake.into_bytes());
+    assert!(inspect_report(&modified.bytes, &modified.manifest).is_err());
+}
+#[test]
+fn inspection_rejects_nested_workbook_external_relationships() {
+    let rendered = render(&fixture(), ReportFormat::Pptx);
+    let bytes = rewrite_zip(&rendered.bytes, |name, data| {
+        if !name.ends_with(".xlsx") {
+            return data;
+        }
+        rewrite_zip(&data, |inner, original| {
+            if inner != "xl/_rels/workbook.xml.rels" {
+                return original;
+            }
+            String::from_utf8(original).unwrap().replace("</Relationships>", "<Relationship Id=\"external\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink\" Target=\"https://example.com/data.xlsx\" TargetMode=\"External\"/></Relationships>").into_bytes()
+        })
+    });
+    let modified = rebind_bytes(rendered, bytes);
+    assert!(inspect_report(&modified.bytes, &modified.manifest).is_err());
+}
