@@ -309,6 +309,80 @@ fn rebind_bytes(mut rendered: RenderedReport, bytes: Vec<u8>) -> RenderedReport 
     rendered.bytes = bytes;
     rendered
 }
+
+#[test]
+fn inspection_rejects_incomplete_powerpoint_theme_style_lists() {
+    for (list, one_style) in [
+        (
+            "fillStyleLst",
+            "<a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill>",
+        ),
+        (
+            "lnStyleLst",
+            "<a:ln><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill></a:ln>",
+        ),
+        (
+            "effectStyleLst",
+            "<a:effectStyle><a:effectLst/></a:effectStyle>",
+        ),
+        (
+            "bgFillStyleLst",
+            "<a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill>",
+        ),
+    ] {
+        let rendered = render(&fixture(), ReportFormat::Pptx);
+        let bytes = rewrite_zip(&rendered.bytes, |name, bytes| {
+            if name != "ppt/theme/theme1.xml" {
+                return bytes;
+            }
+            let mut theme = String::from_utf8(bytes).unwrap();
+            let opening = format!("<a:{list}>");
+            let start = theme.find(&opening).unwrap() + opening.len();
+            let end = start + theme[start..].find(&format!("</a:{list}>")).unwrap();
+            theme.replace_range(start..end, one_style);
+            theme.into_bytes()
+        });
+        let modified = rebind_bytes(rendered, bytes);
+        assert!(
+            inspect_report(&modified.bytes, &modified.manifest).is_err(),
+            "PowerPoint requires three styles in {list}, even when the package hash matches"
+        );
+    }
+}
+
+#[test]
+fn inspection_resolves_theme_namespace_aliases() {
+    let rendered = render(&fixture(), ReportFormat::Pptx);
+    let bytes = rewrite_zip(&rendered.bytes, |name, bytes| {
+        if name != "ppt/theme/theme1.xml" {
+            return bytes;
+        }
+        String::from_utf8(bytes)
+            .unwrap()
+            .replace("xmlns:a=", "xmlns:d=")
+            .replace("a:", "d:")
+            .into_bytes()
+    });
+    let modified = rebind_bytes(rendered, bytes);
+    assert!(inspect_report(&modified.bytes, &modified.manifest).is_ok());
+}
+
+#[test]
+fn inspection_rejects_theme_style_children_in_an_unrelated_namespace() {
+    let rendered = render(&fixture(), ReportFormat::Pptx);
+    let bytes = rewrite_zip(&rendered.bytes, |name, bytes| {
+        if name != "ppt/theme/theme1.xml" {
+            return bytes;
+        }
+        String::from_utf8(bytes)
+            .unwrap()
+            .replace("<a:ln w=", "<a:ln xmlns:a=\"urn:unrelated\" w=")
+            .into_bytes()
+    });
+    let modified = rebind_bytes(rendered, bytes);
+    assert!(inspect_report(&modified.bytes, &modified.manifest).is_err());
+}
+
 #[test]
 fn inspection_rejects_nested_workbook_expansion() {
     let rendered = render(&fixture(), ReportFormat::Pptx);

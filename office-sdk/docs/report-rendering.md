@@ -144,6 +144,14 @@ structural check; it never claims human approval, numerical correctness of the
 source or pixel-perfect visual acceptance. PowerPoint editing/rendering and
 visual QA remain acceptance evidence for a consuming report template.
 
+The report inspector also rejects incomplete default DrawingML theme style
+lists. Each fill, line, effect and background-fill list supplies at least three
+entries. CI independently validates the generated presentation and its embedded
+workbooks with Microsoft's Open XML schemas; this does not require .NET in SDK
+consumers. With .NET SDK 10.0.403 installed, run `make validate-pptx` from the
+repository root to repeat that check. Validator packages and the SDK are pinned
+under `tools/pptx-validation/`.
+
 A host application or MCP adapter should:
 
 1. Resolve the authorized immutable document from the server-owned pipeline

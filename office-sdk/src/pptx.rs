@@ -725,6 +725,12 @@ impl PptxDocument {
                 <a:solidFill>
                     <a:schemeClr val="phClr"/>
                 </a:solidFill>
+                <a:solidFill>
+                    <a:schemeClr val="phClr"/>
+                </a:solidFill>
+                <a:solidFill>
+                    <a:schemeClr val="phClr"/>
+                </a:solidFill>
             </a:fillStyleLst>
             <a:lnStyleLst>
                 <a:ln w="9525" cap="flat" cmpd="sng" algn="ctr">
@@ -733,6 +739,12 @@ impl PptxDocument {
                             <a:shade val="95000"/>
                         </a:schemeClr>
                     </a:solidFill>
+                </a:ln>
+                <a:ln w="25400" cap="flat" cmpd="sng" algn="ctr">
+                    <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
+                </a:ln>
+                <a:ln w="38100" cap="flat" cmpd="sng" algn="ctr">
+                    <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
                 </a:ln>
             </a:lnStyleLst>
             <a:effectStyleLst>
@@ -745,8 +757,16 @@ impl PptxDocument {
                         </a:outerShdw>
                     </a:effectLst>
                 </a:effectStyle>
+                <a:effectStyle><a:effectLst/></a:effectStyle>
+                <a:effectStyle><a:effectLst/></a:effectStyle>
             </a:effectStyleLst>
             <a:bgFillStyleLst>
+                <a:solidFill>
+                    <a:schemeClr val="phClr"/>
+                </a:solidFill>
+                <a:solidFill>
+                    <a:schemeClr val="phClr"/>
+                </a:solidFill>
                 <a:solidFill>
                     <a:schemeClr val="phClr"/>
                 </a:solidFill>

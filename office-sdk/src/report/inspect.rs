@@ -58,6 +58,11 @@ pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<R
                     check_rels(name, data, &parts)?;
                 }
             }
+            check_theme_style_matrix(
+                parts
+                    .get("ppt/theme/theme1.xml")
+                    .ok_or_else(|| invalid("pptx", "missing report theme"))?,
+            )?;
             let presentation = std::str::from_utf8(
                 parts
                     .get("ppt/presentation.xml")
@@ -111,6 +116,7 @@ pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<R
             result.structural_checks.extend([
                 "OOXML parts parse and every internal relationship resolves".into(),
                 "saved 16:9 dimensions and slide count verified".into(),
+                "DrawingML theme style matrix minimum entries verified".into(),
                 "chart parts reference embedded editable workbook data".into(),
             ]);
         }
@@ -121,6 +127,100 @@ pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<R
     result.visual_review_required = true;
     Ok(result)
 }
+
+const THEME_STYLE_LISTS: [&[u8]; 4] = [
+    b"fillStyleLst",
+    b"lnStyleLst",
+    b"effectStyleLst",
+    b"bgFillStyleLst",
+];
+
+fn theme_style_child(list: usize, name: &[u8]) -> bool {
+    match list {
+        1 => name == b"ln",
+        2 => name == b"effectStyle",
+        _ => matches!(
+            name,
+            b"noFill" | b"solidFill" | b"gradFill" | b"blipFill" | b"pattFill" | b"grpFill"
+        ),
+    }
+}
+
+fn record_theme_style(
+    stack: &[Vec<u8>],
+    name: &[u8],
+    drawing_namespace: bool,
+    counts: &mut [Option<usize>; 4],
+) -> ReportResult<()> {
+    let in_matrix = stack.iter().take(3).map(Vec::as_slice).eq([
+        b"theme".as_slice(),
+        b"themeElements".as_slice(),
+        b"fmtScheme".as_slice(),
+    ]);
+    if !in_matrix {
+        return Ok(());
+    }
+    if stack.len() == 3 && drawing_namespace {
+        if let Some(index) = THEME_STYLE_LISTS.iter().position(|list| *list == name) {
+            if counts[index].replace(0).is_some() {
+                return Err(invalid("pptx theme", "duplicate style matrix list"));
+            }
+        }
+    } else if stack.len() == 4 {
+        if let Some(index) = THEME_STYLE_LISTS.iter().position(|list| *list == stack[3]) {
+            if !drawing_namespace || !theme_style_child(index, name) {
+                return Err(invalid("pptx theme", "invalid style matrix child"));
+            }
+            *counts[index]
+                .as_mut()
+                .ok_or_else(|| invalid("pptx theme", "missing style matrix list"))? += 1;
+        }
+    }
+    Ok(())
+}
+
+fn check_theme_style_matrix(data: &[u8]) -> ReportResult<()> {
+    use quick_xml::{events::Event, name::ResolveResult};
+    let mut reader = quick_xml::NsReader::from_reader(data);
+    let mut stack = Vec::new();
+    let mut counts = [None; 4];
+    loop {
+        let (namespace, event) = reader
+            .read_resolved_event()
+            .map_err(crate::OfficeError::from)?;
+        let drawing = matches!(namespace, ResolveResult::Bound(ns) if ns.as_ref() == "http://schemas.openxmlformats.org/drawingml/2006/main");
+        let opens = matches!(&event, Event::Start(_));
+        match event {
+            Event::Start(element) | Event::Empty(element) => {
+                let name = element.local_name();
+                record_theme_style(&stack, name.as_ref().as_bytes(), drawing, &mut counts)?;
+                if opens {
+                    if stack.len() >= 128 {
+                        return Err(ReportError::LimitExceeded("theme XML nesting".into()));
+                    }
+                    stack.push(if drawing {
+                        name.as_ref().as_bytes().to_vec()
+                    } else {
+                        Vec::new()
+                    });
+                }
+            }
+            Event::End(_) => {
+                stack.pop();
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if counts.iter().any(|count| count.unwrap_or(0) < 3) {
+        return Err(invalid(
+            "pptx theme",
+            "style matrix lists require at least three entries",
+        ));
+    }
+    Ok(())
+}
+
 fn parse_xml(data: &[u8]) -> ReportResult<()> {
     let mut reader = quick_xml::Reader::from_reader(data);
     let mut buf = Vec::new();
