@@ -6,7 +6,7 @@ use office_sdk::{
 use std::io::{Cursor, Read};
 use zip::ZipArchive;
 fn fixture() -> ReportDocument {
-    serde_json::from_str(include_str!("fixtures/qbr-report.json")).unwrap()
+    serde_json::from_str(include_str!("fixtures/executive-report.json")).unwrap()
 }
 fn zip_part(bytes: &[u8], name: &str) -> String {
     let mut z = ZipArchive::new(Cursor::new(bytes)).unwrap();

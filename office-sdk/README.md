@@ -382,7 +382,7 @@ PowerPoint, with bounded layout, source/output digests, speaker notes and
 structural inspection. From `office-sdk/`, run:
 
 ```sh
-cargo run --example report_render -- tests/fixtures/qbr-report.json output/reports
+cargo run --example report_render -- tests/fixtures/executive-report.json output/reports
 ```
 
-Sage/service consumers can enable only `report` with `default-features = false`.
+Service consumers can enable only `report` with `default-features = false`.

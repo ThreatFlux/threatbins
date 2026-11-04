@@ -1,6 +1,6 @@
 use office_sdk::report::*;
 fn fixture() -> ReportDocument {
-    serde_json::from_str(include_str!("fixtures/qbr-report.json")).unwrap()
+    serde_json::from_str(include_str!("fixtures/executive-report.json")).unwrap()
 }
 #[test]
 fn typed_model_hash_is_stable_across_json_object_order() {

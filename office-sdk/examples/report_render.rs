@@ -1,11 +1,11 @@
-//! cargo run --example report_render -- tests/fixtures/qbr-report.json output/reports
+//! cargo run --example report_render -- tests/fixtures/executive-report.json output/reports
 use office_sdk::report::*;
 use std::{env, fs, path::PathBuf};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
     let fixture = args
         .next()
-        .unwrap_or_else(|| "tests/fixtures/qbr-report.json".into());
+        .unwrap_or_else(|| "tests/fixtures/executive-report.json".into());
     let out = PathBuf::from(args.next().unwrap_or_else(|| "output/reports".into()));
     let document: ReportDocument = serde_json::from_slice(&fs::read(fixture)?)?;
     fs::create_dir_all(&out)?;

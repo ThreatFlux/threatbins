@@ -25,12 +25,12 @@ Run a complete example from the repository root:
 
 ```sh
 cargo run --manifest-path office-sdk/Cargo.toml --example report_render --locked -- \
-  office-sdk/tests/fixtures/qbr-report.json output/reports
+  office-sdk/tests/fixtures/executive-report.json output/reports
 ```
 
 This writes three documents and one JSON manifest per format. The synthetic
-QBR fixture is a conformance example, not a dependency on CounterMeasure
-business rules. Other report types use the same document blocks.
+executive report fixture demonstrates the generic document contract. Applications
+supply their own report types, facts and business rules using the same blocks.
 
 ## Input and compatibility
 
@@ -76,7 +76,7 @@ adding HTML does not silently change legacy REST behavior. Existing
 when the deck has no slides. Public report structs and fixture JSON define the
 wire contract; no environment variable or network connection enables a format.
 
-Core and other contract-only consumers can use `default-features = false,
+Contract-only consumers can use `default-features = false,
 features = ["report-model"]` for the serde DTOs, `validate_report_document` and
 canonical typed digest without PDF, fonts, ZIP, Office, images or service code.
 Its normal dependency graph contains only serde/serde_json, SHA-256 and error
@@ -123,7 +123,7 @@ the supplied font family but does not embed its binary; installing that font
 in PowerPoint/LibreOffice avoids fallback-width differences. Custom fonts do
 not grant rights to embed them: the caller must supply an appropriate license.
 
-## Manifest, inspection and Sage integration
+## Manifest, inspection and host integration
 
 `RenderedReport` contains in-memory `bytes` and `ReportManifest`:
 
@@ -144,7 +144,7 @@ structural check; it never claims human approval, numerical correctness of the
 source or pixel-perfect visual acceptance. PowerPoint editing/rendering and
 visual QA remain acceptance evidence for a consuming report template.
 
-Sage's generic MCP adapter should:
+A host application or MCP adapter should:
 
 1. Resolve the authorized immutable document from the server-owned pipeline
    binding and map the approved typed content to this schema. Verify the
@@ -154,13 +154,13 @@ Sage's generic MCP adapter should:
    the pipeline's resource budget. Use the same document for all formats.
 3. Run bounded blocking SDK work under the host's execution/cancellation policy.
    Do not accept tenant identity, artifact paths or approval claims from prose.
-4. Re-run `inspect_report` as desired, persist bytes through Tasks/Forge/private
-   artifacts, and return a scoped reference plus the manifest. SDK filenames
-   and bytes confer no download authorization.
+4. Re-run `inspect_report` as desired, persist bytes through the host's private
+   artifact service, and return a scoped reference plus the manifest. SDK
+   filenames and bytes confer no download authorization.
 5. Retain exact selected comparison/report/evidence/approval bindings and
    require actual rendered-artifact review before reporting feature acceptance.
 
 Use one maintained SDK dependency pinned to the reviewed commit/release. Do
-not copy these renderers into Core or Sage. MCP transport, tool admission,
+not copy these renderers into consuming applications. MCP transport, tool admission,
 authorization, queues, remote cancellation and artifact retention remain host
 responsibilities.

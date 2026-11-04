@@ -1,6 +1,6 @@
 # Report SDK conformance evidence
 
-Synthetic fixture: [`tests/fixtures/qbr-report.json`](../tests/fixtures/qbr-report.json).
+Synthetic fixture: [`tests/fixtures/executive-report.json`](../tests/fixtures/executive-report.json).
 The example produces PDF, HTML, PPTX and per-format manifests from the same
 schema-1 document. No customer data or live report approval is involved.
 
@@ -33,7 +33,7 @@ Validated locally before the SDK implementation commit:
   and native chart data survived; all three native tables remained native.
 
 This is structural, numerical-parity and real-renderer evidence, not a claim
-of completed CounterMeasure integration or human report approval. Interactive
+of completed host application integration or human report approval. Interactive
 Microsoft PowerPoint UI editing was not exercised. LibreOffice's own export
 retains native chart data but removes the separate embedded XLSX; the original
 SDK artifact contains the XLSX and correct internal relationships. Verify any
