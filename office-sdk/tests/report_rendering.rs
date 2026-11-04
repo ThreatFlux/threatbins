@@ -1,0 +1,280 @@
+use office_sdk::{
+    OfficeDocument,
+    pptx::{PptxDocument, SlideSize},
+    report::*,
+};
+use std::io::{Cursor, Read};
+use zip::ZipArchive;
+fn fixture() -> ReportDocument {
+    serde_json::from_str(include_str!("fixtures/qbr-report.json")).unwrap()
+}
+fn zip_part(bytes: &[u8], name: &str) -> String {
+    let mut z = ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let mut s = String::new();
+    z.by_name(name).unwrap().read_to_string(&mut s).unwrap();
+    s
+}
+fn render(d: &ReportDocument, f: ReportFormat) -> RenderedReport {
+    render_report(d, &ReportRenderOptions::new(f)).unwrap()
+}
+
+#[test]
+fn same_document_binds_all_formats_and_preserves_facts() {
+    let d = fixture();
+    let digest = report_document_sha256(&d).unwrap();
+    for f in [ReportFormat::Pdf, ReportFormat::Html, ReportFormat::Pptx] {
+        let r = render(&d, f);
+        assert_eq!(r.manifest.document_sha256, digest);
+        assert_eq!(r.manifest.evidence_sha256, d.provenance.evidence_sha256);
+        assert_eq!(r.manifest.byte_size, r.bytes.len());
+        assert!(r.manifest.inspection.visual_review_required);
+        match f {
+            ReportFormat::Pdf => {
+                let pdf = lopdf::Document::load_mem(&r.bytes).unwrap();
+                assert_eq!(Some(pdf.get_pages().len()), r.manifest.pages_or_slides);
+                let pages = (1..=pdf.get_pages().len() as u32).collect::<Vec<_>>();
+                let text = pdf.extract_text(&pages).unwrap();
+                for value in [
+                    "64",
+                    "75",
+                    "Production",
+                    "Développement",
+                    "Защита",
+                    "Not measured",
+                    "Previous period",
+                    "Definitions",
+                ] {
+                    assert!(text.contains(value), "PDF lost {value}: {text}");
+                }
+            }
+            ReportFormat::Html => {
+                let text = String::from_utf8(r.bytes).unwrap();
+                for value in [
+                    "64",
+                    "75",
+                    "Développement",
+                    "Защита",
+                    "Not measured",
+                    "Previous period",
+                ] {
+                    assert!(text.contains(value));
+                }
+            }
+            ReportFormat::Pptx => {
+                let p = zip_part(&r.bytes, "ppt/presentation.xml");
+                assert!(p.contains("cx=\"12192000\" cy=\"6858000\""));
+                assert!(
+                    zip_part(&r.bytes, "ppt/notesSlides/notesSlide1.xml").contains("Definitions:")
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn pptx_contains_native_tables_charts_editable_workbook_and_gap_semantics() {
+    let r = render(&fixture(), ReportFormat::Pptx);
+    let mut z = ZipArchive::new(Cursor::new(&r.bytes)).unwrap();
+    let names = (0..z.len())
+        .map(|i| z.by_index(i).unwrap().name().unwrap().into_owned())
+        .collect::<Vec<_>>();
+    let chart_name = names
+        .iter()
+        .find(|n| n.starts_with("ppt/charts/chart") && n.ends_with(".xml"))
+        .unwrap();
+    let chart = zip_part(&r.bytes, chart_name);
+    assert!(chart.contains("<c:lineChart>"));
+    assert!(chart.contains("<c:dispBlanksAs val=\"gap\"/>"));
+    assert!(chart.contains("<c:externalData r:id=\"rIdWorkbook\""));
+    assert!(chart.contains("Sheet1!$B$2:$B$5"));
+    assert!(!chart.contains("<c:pt idx=\"1\"><c:v>0</c:v>"));
+    let workbook_name = names
+        .iter()
+        .find(|n| n.starts_with("ppt/embeddings/"))
+        .unwrap();
+    let mut workbook = Vec::new();
+    z.by_name(workbook_name)
+        .unwrap()
+        .read_to_end(&mut workbook)
+        .unwrap();
+    let sheet = zip_part(&workbook, "xl/worksheets/sheet1.xml");
+    assert!(sheet.contains("<c r=\"B2\"><v>61</v></c>"));
+    assert!(!sheet.contains("r=\"B3\""));
+    assert!(sheet.contains("<c r=\"B5\"><v>64</v></c>"));
+    assert!(
+        names
+            .iter()
+            .filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))
+            .any(|n| zip_part(&r.bytes, n).contains("<a:tbl>"))
+    );
+    // Demonstrate an editable text/chart-data round trip using real XML parts,
+    // not screenshot images: the payload is native text and numeric cells.
+    assert!(names.iter().all(|n| !n.starts_with("ppt/media/")));
+}
+
+#[test]
+fn html_escapes_injection_and_has_offline_accessible_data() {
+    let mut d = fixture();
+    d.title = "<script>alert('x')</script> & report".into();
+    d.sections[0].blocks = vec![ReportBlock::Paragraph {
+        text: "<img src=https://example.com onerror=alert(1)> \" &".into(),
+    }];
+    let h = String::from_utf8(render(&d, ReportFormat::Html).bytes).unwrap();
+    assert!(!h.contains("<script>"));
+    assert!(!h.contains("<img src="));
+    assert!(h.contains("&lt;script&gt;"));
+    assert!(h.contains("Content-Security-Policy"));
+    assert!(h.contains("scope=\"col\""));
+    assert!(h.contains("<desc>"));
+    assert!(h.contains("Not measured"));
+}
+
+#[test]
+fn limits_hash_schema_and_nonfinite_data_fail_closed() {
+    let d = fixture();
+    let mut o = ReportRenderOptions::new(ReportFormat::Pdf);
+    o.expected_document_sha256 = Some("b".repeat(64));
+    assert!(matches!(
+        render_report(&d, &o),
+        Err(ReportError::DigestMismatch)
+    ));
+    o.expected_document_sha256 = None;
+    o.limits.max_pages = 1;
+    assert!(matches!(
+        render_report(&d, &o),
+        Err(ReportError::LimitExceeded(_))
+    ));
+    let mut d = fixture();
+    d.schema_version = 2;
+    assert!(render_report(&d, &ReportRenderOptions::new(ReportFormat::Html)).is_err());
+    let mut d = fixture();
+    if let ReportBlock::Chart { chart } = &mut d.sections[1].blocks[1] {
+        chart.series[0].values[0] = Some(f64::NAN);
+    }
+    assert!(render_report(&d, &ReportRenderOptions::new(ReportFormat::Pptx)).is_err());
+    let mut d = fixture();
+    d.sections[0].blocks.push(ReportBlock::Paragraph {
+        text: "illegal\0text".into(),
+    });
+    assert!(render_report(&d, &ReportRenderOptions::new(ReportFormat::Pdf)).is_err());
+}
+
+#[test]
+fn long_rows_paginate_without_losing_names_or_last_row() {
+    let mut d = fixture();
+    let rows = (0..80)
+        .map(|i| {
+            vec![
+                format!("{i}: {}", "full-environment-name-".repeat(12)),
+                format!("last-value-{i}"),
+            ]
+        })
+        .collect();
+    d.sections = vec![ReportSection {
+        id: "large".into(),
+        title: "Large table".into(),
+        blocks: vec![ReportBlock::Table {
+            table: ReportTable {
+                caption: "All rows".into(),
+                headers: vec!["Environment".into(), "Fact".into()],
+                rows,
+            },
+        }],
+    }];
+    let r = render(&d, ReportFormat::Pdf);
+    let pdf = lopdf::Document::load_mem(&r.bytes).unwrap();
+    assert!(pdf.get_pages().len() > 10);
+    let text = pdf
+        .extract_text(&(1..=pdf.get_pages().len() as u32).collect::<Vec<_>>())
+        .unwrap();
+    assert!(text.contains("last-value-79"));
+}
+
+#[test]
+fn empty_document_and_missing_glyphs_are_explicit() {
+    let mut d = fixture();
+    d.sections.clear();
+    d.definitions.clear();
+    d.limitations.clear();
+    assert!(
+        render(&d, ReportFormat::Pdf)
+            .manifest
+            .pages_or_slides
+            .unwrap()
+            >= 2
+    );
+    d.title = "Unsupported 🦀 glyph".into();
+    assert!(matches!(
+        render_report(&d, &ReportRenderOptions::new(ReportFormat::Pdf)),
+        Err(ReportError::UnsupportedGlyph(_))
+    ));
+}
+
+#[test]
+fn legacy_slide_size_is_serialized_before_and_after_adding_slides() {
+    for (size, w, h) in [
+        (SlideSize::Widescreen16x9, 12192000, 6858000),
+        (SlideSize::Standard4x3, 9144000, 6858000),
+        (
+            SlideSize::Custom {
+                width: 10000000,
+                height: 5000000,
+            },
+            10000000,
+            5000000,
+        ),
+    ] {
+        let mut p = PptxDocument::new();
+        p.set_slide_size(size);
+        assert!(
+            zip_part(&p.to_bytes().unwrap(), "ppt/presentation.xml")
+                .contains(&format!("cx=\"{w}\" cy=\"{h}\""))
+        );
+        p.add_slide("Title", &["Body"]).unwrap();
+        assert!(
+            zip_part(&p.to_bytes().unwrap(), "ppt/presentation.xml")
+                .contains(&format!("cx=\"{w}\" cy=\"{h}\""))
+        );
+    }
+}
+
+#[test]
+fn inspection_rejects_changed_bytes_and_forged_counts() {
+    let d = fixture();
+    let r = render(&d, ReportFormat::Pptx);
+    let mut modified = r.bytes.clone();
+    modified[10] ^= 1;
+    assert!(matches!(
+        inspect_report(&modified, &r.manifest),
+        Err(ReportError::DigestMismatch)
+    ));
+    let mut manifest = r.manifest.clone();
+    manifest.pages_or_slides = Some(999);
+    assert!(inspect_report(&r.bytes, &manifest).is_err());
+    let mut manifest = r.manifest.clone();
+    manifest.mime_type = "application/pdf".into();
+    assert!(inspect_report(&r.bytes, &manifest).is_err());
+}
+
+#[test]
+fn imported_standard_and_custom_dimensions_survive_new_slides() {
+    for size in [
+        SlideSize::Standard4x3,
+        SlideSize::Custom {
+            width: 10000000,
+            height: 5000000,
+        },
+    ] {
+        let mut p = PptxDocument::new();
+        p.set_slide_size(size);
+        p.add_slide("Original", &[]).unwrap();
+        let mut loaded = PptxDocument::from_bytes(&p.to_bytes().unwrap()).unwrap();
+        assert_eq!(loaded.get_slide_size(), size);
+        loaded.add_slide("Added", &[]).unwrap();
+        let (w, h) = size.dimensions();
+        assert!(
+            zip_part(&loaded.to_bytes().unwrap(), "ppt/presentation.xml")
+                .contains(&format!("cx=\"{w}\" cy=\"{h}\""))
+        );
+    }
+}
