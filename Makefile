@@ -13,8 +13,9 @@ ci: fmt-check check test docs audit msrv-check
 .PHONY: validate-pptx
 validate-pptx:
 	cargo +$(RUST_STABLE) run --manifest-path office-sdk/Cargo.toml --example report_render --all-features --locked -- office-sdk/tests/fixtures/executive-report.json $(PPTX_INTEROP_OUTPUT)
+	cargo +$(RUST_STABLE) run --manifest-path office-sdk/Cargo.toml --example report_render --all-features --locked -- office-sdk/tests/fixtures/navigation-report.json $(PPTX_INTEROP_OUTPUT)/navigation
 	cd tools/pptx-validation && dotnet restore --locked-mode
-	cd tools/pptx-validation && dotnet run --configuration Release --no-restore -- "$(abspath $(PPTX_INTEROP_OUTPUT))/report.pptx"
+	cd tools/pptx-validation && dotnet run --configuration Release --no-restore -- "$(abspath $(PPTX_INTEROP_OUTPUT))/report.pptx" "$(abspath $(PPTX_INTEROP_OUTPUT))/navigation/report.pptx"
 
 fmt-check:
 	@set -eu; for manifest in $(MANIFESTS); do cargo +$(RUST_STABLE) fmt --manifest-path $$manifest --all -- --check; done

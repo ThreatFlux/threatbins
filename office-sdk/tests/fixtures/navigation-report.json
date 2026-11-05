@@ -1,0 +1,268 @@
+{
+  "schema_version": 1,
+  "document_id": "native-navigation",
+  "revision": "1",
+  "report_type": "practitioner",
+  "title": "Native navigation",
+  "subtitle": "Internal report references",
+  "period": "Recorded period",
+  "scope": "Caller-owned scope",
+  "comparison": "Not applicable",
+  "provenance": {
+    "evidence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sources": []
+  },
+  "definitions": [],
+  "limitations": [],
+  "sections": [
+    {
+      "id": "summary",
+      "title": "Findings",
+      "blocks": [
+        {
+          "type": "links",
+          "links": [
+            {
+              "label": "Review record 39",
+              "target_id": "record:39"
+            },
+            {
+              "label": "Follow the roadmap",
+              "target_id": "roadmap"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "records",
+      "title": "Complete records",
+      "blocks": [
+        {
+          "type": "anchored_table",
+          "table": {
+            "caption": "Retained records",
+            "headers": [
+              "Record",
+              "Next action"
+            ],
+            "rows": [
+              [
+                "Record 0",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 1",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 2",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 3",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 4",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 5",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 6",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 7",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 8",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 9",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 10",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 11",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 12",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 13",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 14",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 15",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 16",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 17",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 18",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 19",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 20",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 21",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 22",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 23",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 24",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 25",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 26",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 27",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 28",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 29",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 30",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 31",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 32",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 33",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 34",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 35",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 36",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 37",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 38",
+                "A retained action and its recorded evidence."
+              ],
+              [
+                "Record 39",
+                "A retained action and its recorded evidence."
+              ]
+            ]
+          },
+          "row_ids": [
+            "record:0",
+            "record:1",
+            "record:2",
+            "record:3",
+            "record:4",
+            "record:5",
+            "record:6",
+            "record:7",
+            "record:8",
+            "record:9",
+            "record:10",
+            "record:11",
+            "record:12",
+            "record:13",
+            "record:14",
+            "record:15",
+            "record:16",
+            "record:17",
+            "record:18",
+            "record:19",
+            "record:20",
+            "record:21",
+            "record:22",
+            "record:23",
+            "record:24",
+            "record:25",
+            "record:26",
+            "record:27",
+            "record:28",
+            "record:29",
+            "record:30",
+            "record:31",
+            "record:32",
+            "record:33",
+            "record:34",
+            "record:35",
+            "record:36",
+            "record:37",
+            "record:38",
+            "record:39"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "roadmap",
+      "title": "Roadmap",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Follow the recorded actions."
+        }
+      ]
+    }
+  ]
+}

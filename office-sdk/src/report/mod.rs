@@ -10,6 +10,7 @@ mod inspect;
 pub use inspect::inspect_report;
 #[cfg(feature = "report")]
 mod layout;
+mod navigation;
 #[cfg(feature = "report")]
 mod pdf;
 #[cfg(feature = "report")]
@@ -97,9 +98,29 @@ pub struct ReportSection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ReportBlock {
-    Paragraph { text: String },
-    Table { table: ReportTable },
-    Chart { chart: ReportChart },
+    Paragraph {
+        text: String,
+    },
+    Table {
+        table: ReportTable,
+    },
+    AnchoredTable {
+        table: ReportTable,
+        row_ids: Vec<String>,
+    },
+    Links {
+        links: Vec<ReportLink>,
+    },
+    Chart {
+        chart: ReportChart,
+    },
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReportLink {
+    pub label: String,
+    /// An exact section or anchored-table row in this document. External URLs are not supported.
+    pub target_id: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -357,7 +378,12 @@ pub fn render_report(
                 native_editable_text: options.format == ReportFormat::Pptx,
                 native_editable_tables: options.format == ReportFormat::Pptx
                     && document.sections.iter().flat_map(|s| &s.blocks).any(|b| {
-                        matches!(b, ReportBlock::Table { .. } | ReportBlock::Chart { .. })
+                        matches!(
+                            b,
+                            ReportBlock::Table { .. }
+                                | ReportBlock::AnchoredTable { .. }
+                                | ReportBlock::Chart { .. }
+                        )
                     }),
                 native_editable_charts: options.format == ReportFormat::Pptx
                     && document
@@ -477,6 +503,7 @@ fn validate(d: &ReportDocument, limits: &ReportLimits) -> ReportResult<()> {
         Ok(())
     }
     walk(&val)?;
+    navigation::validate(d)?;
     if d.provenance.evidence_sha256.len() != 64
         || !d
             .provenance
@@ -498,6 +525,7 @@ fn validate(d: &ReportDocument, limits: &ReportLimits) -> ReportResult<()> {
     }
     let mut ids = std::collections::HashSet::new();
     let mut rows = 0;
+    let mut links = 0;
     let mut points = 0;
     for section in &d.sections {
         if section.id.is_empty() || !ids.insert(&section.id) {
@@ -509,7 +537,10 @@ fn validate(d: &ReportDocument, limits: &ReportLimits) -> ReportResult<()> {
         for block in &section.blocks {
             match block {
                 ReportBlock::Paragraph { .. } => {}
-                ReportBlock::Table { table } => {
+                ReportBlock::Links { links: entries } => {
+                    links += entries.len();
+                }
+                ReportBlock::Table { table } | ReportBlock::AnchoredTable { table, .. } => {
                     if table.headers.is_empty()
                         || table.headers.len() > 8
                         || table.rows.iter().any(|r| r.len() != table.headers.len())
@@ -569,9 +600,12 @@ fn validate(d: &ReportDocument, limits: &ReportLimits) -> ReportResult<()> {
             }
         }
     }
-    if rows > limits.max_table_rows || points > limits.max_chart_points {
+    if rows > limits.max_table_rows
+        || links > limits.max_table_rows
+        || points > limits.max_chart_points
+    {
         return Err(ReportError::LimitExceeded(
-            "table rows or chart points".into(),
+            "table rows, internal links or chart points".into(),
         ));
     }
     Ok(())

@@ -31,6 +31,39 @@ pub(crate) fn render(d: &ReportDocument, pages: &[Page], font: &[u8]) -> ReportR
             );
         }
         match &page.body {
+            PageBody::Links(lines) => {
+                for (n, link) in lines.iter().enumerate() {
+                    let baseline = BODY_TOP + n as f64 * LINE;
+                    text(
+                        &mut ops, &handle, &link.text, LEFT, baseline, 12.0, "2563EB",
+                    );
+                    if link.text.is_empty() {
+                        continue;
+                    }
+                    let (target, top) = destination(pages, &link.target_id)?;
+                    ops.push(Op::LinkAnnotation {
+                        link: printpdf::LinkAnnotation::new(
+                            printpdf::Rect {
+                                x: Pt(LEFT as f32),
+                                y: Pt((HEIGHT - baseline - 3.0) as f32),
+                                width: Pt(metrics.width(&link.text, 12.0)? as f32),
+                                height: Pt(LINE as f32),
+                                mode: None,
+                                winding_order: None,
+                            },
+                            printpdf::Actions::Goto(printpdf::Destination::Xyz {
+                                page: target + 1,
+                                left: Some(LEFT as f32),
+                                top: Some((HEIGHT - top) as f32),
+                                zoom: None,
+                            }),
+                            Some(printpdf::BorderArray::Solid([0.0, 0.0, 0.0])),
+                            Some(printpdf::ColorArray::Transparent),
+                            None,
+                        ),
+                    });
+                }
+            }
             PageBody::Text(lines) => {
                 for (n, l) in lines.iter().enumerate() {
                     text(

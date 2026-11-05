@@ -53,6 +53,25 @@ Each block is one of these tagged objects:
 {"type":"chart","chart":{"title":"Observed trend","description":"Only recorded points; the missing day is a gap.","labels":["Day 1","Day 2","Day 3"],"series":[{"name":"Readiness","values":[61,null,64]}],"minimum":0,"maximum":100,"target":75,"bands":[{"label":"Critical","start":0},{"label":"At risk","start":40}]}}
 ```
 
+Internal references use caller-owned section or table-row IDs:
+
+```json
+{"type":"links","links":[{"label":"Review record 42","target_id":"record:42"}]}
+```
+
+```json
+{"type":"anchored_table","table":{"caption":"Records","headers":["Record","Action"],"rows":[["42","Review the retained evidence"]]},"row_ids":["record:42"]}
+```
+
+Row IDs must match the row count and be unique across all section and row IDs.
+Missing targets and empty content targets are rejected before rendering. Links
+remain internal: HTML uses fragment anchors, PDF uses native GoTo annotations,
+and PowerPoint uses native slide-jump relationships to the page containing that
+exact row. Oversized and split rows retain their original first destination.
+Links do not fetch URLs or add external package relationships. Legacy blocks
+retain their serialization and digest. SDK 0.2 adds these tagged variants; Rust
+consumers that match `ReportBlock` exhaustively must handle both new variants.
+
 Charts currently use a line representation. `null` is a missing point, never
 zero; gaps break lines. All formats include a complete text data table with
 full labels and every supplied value. Target/band definitions are disclosed as

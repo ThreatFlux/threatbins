@@ -28,6 +28,7 @@ pub(crate) fn render(
     deck.set_slide_size(SlideSize::Widescreen16x9);
     let metrics = FontMetrics::new(font)?;
     let mut charts = Vec::new();
+    let mut navigation = Vec::new();
     for (i, p) in pages.iter().enumerate() {
         let id = deck.add_slide("", &[])?;
         deck.add_slide_notes(&id, &p.notes)?;
@@ -43,6 +44,16 @@ pub(crate) fn render(
             "172033",
         ));
         match &p.body {
+            PageBody::Links(lines) => {
+                for (n, link) in lines.iter().enumerate() {
+                    let relation = format!("rIdNavigation{}", n + 1);
+                    let shape=textbox(10+n as u32,&[link.text.clone()],LEFT,BODY_TOP-12.0+n as f64*LINE,BODY_WIDTH,LINE,12.0,"2563EB")
+                        .replace("</a:rPr>",&format!("<a:hlinkClick r:id=\"{relation}\" action=\"ppaction://hlinksldjump\"/></a:rPr>"));
+                    shapes.push_str(&shape);
+                    let (target, _) = destination(pages, &link.target_id)?;
+                    navigation.push((i + 1, relation, target + 1));
+                }
+            }
             PageBody::Text(lines) => {
                 shapes.push_str(&textbox(
                     3,
@@ -87,6 +98,13 @@ pub(crate) fn render(
     // Reuse the existing SDK's presentation/master/layout/notes packaging; add
     // native report parts to that package rather than rasterizing the slides.
     let mut parts = read_parts(&deck.to_bytes()?)?;
+    for (source, relation, target) in navigation {
+        let path = format!("ppt/slides/_rels/slide{source}.xml.rels");
+        let rels=String::from_utf8(parts.remove(&path).ok_or_else(||invalid("pptx","missing slide relationships"))?)
+            .map_err(|_|invalid("pptx","slide relationships encoding"))?
+            .replace("</Relationships>",&format!("<Relationship Id=\"{relation}\" Type=\"{REL}/slide\" Target=\"slide{target}.xml\"/></Relationships>"));
+        parts.insert(path, rels.into_bytes());
+    }
     let mut types = String::from_utf8(parts.remove("[Content_Types].xml").unwrap())
         .map_err(|_| invalid("pptx", "content types encoding"))?;
     if !charts.is_empty() {

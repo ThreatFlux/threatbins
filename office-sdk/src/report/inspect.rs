@@ -364,6 +364,8 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
         "dt",
         "dd",
         "section",
+        "nav",
+        "a",
         "figure",
         "figcaption",
         "svg",
@@ -386,6 +388,9 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
     ];
     const ATTRS: &[&str] = &[
         "class",
+        "id",
+        "href",
+        "aria-label",
         "lang",
         "charset",
         "name",
@@ -423,6 +428,8 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
     reader.config_mut().check_end_names = false;
     let mut in_head = false;
     let mut policy_seen = false;
+    let mut ids = BTreeSet::new();
+    let mut targets = Vec::new();
     loop {
         match reader.read_event().map_err(crate::OfficeError::from)? {
             Event::Start(e) | Event::Empty(e) => {
@@ -449,11 +456,32 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
                         .normalized_value(quick_xml::XmlVersion::Explicit1_0)
                         .map_err(crate::OfficeError::from)?
                         .into_owned();
+                    if name == "id" {
+                        if !matches!(tag.as_str(), "section" | "tr")
+                            || value.trim().is_empty()
+                            || !ids.insert(value.clone())
+                        {
+                            return Err(invalid("html", "invalid or duplicate internal anchor"));
+                        }
+                    }
+                    if name == "href" {
+                        let target = value.strip_prefix('#').filter(|target| !target.is_empty());
+                        if tag != "a" || target.is_none() {
+                            return Err(invalid(
+                                "html",
+                                "only internal report links are supported",
+                            ));
+                        }
+                        targets.push(target.unwrap().to_owned());
+                    }
                     if name == "http-equiv" {
                         equivalent = Some(value);
                     } else if name == "content" {
                         content = Some(value);
                     }
+                }
+                if tag == "a" && !names.contains("href") {
+                    return Err(invalid("html", "report link is missing its target"));
                 }
                 if let Some(equivalent) = equivalent {
                     if tag != "meta"
@@ -487,6 +515,9 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
             Event::Eof => break,
             _ => {}
         }
+    }
+    if targets.iter().any(|target| !ids.contains(target)) {
+        return Err(invalid("html", "internal report link target is missing"));
     }
     if !policy_seen {
         return Err(invalid("html", "missing offline policy"));
