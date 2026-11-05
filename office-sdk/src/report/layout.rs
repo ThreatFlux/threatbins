@@ -74,6 +74,7 @@ impl FontMetrics {
 #[derive(Debug, Clone)]
 pub(crate) enum PageBody {
     Text(Vec<String>),
+    Links(Vec<LinkLine>),
     Table {
         headers: Vec<Vec<String>>,
         rows: Vec<Vec<Vec<String>>>,
@@ -81,10 +82,16 @@ pub(crate) enum PageBody {
     Chart(ReportChart),
 }
 #[derive(Debug, Clone)]
+pub(crate) struct LinkLine {
+    pub text: String,
+    pub target_id: String,
+}
+#[derive(Debug, Clone)]
 pub(crate) struct Page {
     pub title: String,
     pub body: PageBody,
     pub notes: String,
+    pub anchors: std::collections::BTreeMap<String, f64>,
 }
 
 pub(crate) fn paginate(d: &ReportDocument, m: &FontMetrics, max: usize) -> ReportResult<Vec<Page>> {
@@ -112,10 +119,46 @@ pub(crate) fn paginate(d: &ReportDocument, m: &FontMetrics, max: usize) -> Repor
     );
     add_text(&mut pages, "Report overview", &intro, m, &common, max)?;
     for section in &d.sections {
+        let section_start = pages.len();
         for block in &section.blocks {
             match block {
                 ReportBlock::Paragraph { text } => {
                     add_text(&mut pages, &section.title, text, m, &common, max)?
+                }
+                ReportBlock::Links { links } => {
+                    let mut lines = Vec::new();
+                    for link in links {
+                        for text in m.wrap(&link.label, 12.0, BODY_WIDTH)? {
+                            lines.push(LinkLine {
+                                text,
+                                target_id: link.target_id.clone(),
+                            });
+                        }
+                    }
+                    for chunk in lines.chunks(22) {
+                        push(
+                            &mut pages,
+                            Page {
+                                title: section.title.clone(),
+                                body: PageBody::Links(chunk.to_vec()),
+                                notes: common.clone(),
+                                anchors: Default::default(),
+                            },
+                            m,
+                            max,
+                        )?;
+                    }
+                }
+                ReportBlock::AnchoredTable { table, row_ids } => {
+                    add_table_impl(
+                        &mut pages,
+                        &section.title,
+                        table,
+                        m,
+                        &common,
+                        max,
+                        Some(row_ids),
+                    )?;
                 }
                 ReportBlock::Table { table } => {
                     add_table(&mut pages, &section.title, table, m, &common, max)?
@@ -139,6 +182,7 @@ pub(crate) fn paginate(d: &ReportDocument, m: &FontMetrics, max: usize) -> Repor
                         Page {
                             title: chart.title.clone(),
                             body: PageBody::Chart(chart.clone()),
+                            anchors: Default::default(),
                             notes: format!(
                                 "{common}\n{}\n{}",
                                 chart.description,
@@ -178,6 +222,9 @@ pub(crate) fn paginate(d: &ReportDocument, m: &FontMetrics, max: usize) -> Repor
                     )?;
                 }
             }
+        }
+        if let Some(page) = pages.get_mut(section_start) {
+            page.anchors.insert(section.id.clone(), 24.0);
         }
     }
     if !d.definitions.is_empty() {
@@ -275,6 +322,7 @@ fn add_text(
                 title: title.into(),
                 body: PageBody::Text(chunk.to_vec()),
                 notes: notes.into(),
+                anchors: Default::default(),
             },
             m,
             max,
@@ -289,6 +337,17 @@ fn add_table(
     m: &FontMetrics,
     notes: &str,
     max: usize,
+) -> ReportResult<()> {
+    add_table_impl(pages, title, t, m, notes, max, None)
+}
+fn add_table_impl(
+    pages: &mut Vec<Page>,
+    title: &str,
+    t: &ReportTable,
+    m: &FontMetrics,
+    notes: &str,
+    max: usize,
+    row_ids: Option<&[String]>,
 ) -> ReportResult<()> {
     let combined = if t.caption.is_empty() {
         title.to_string()
@@ -312,8 +371,9 @@ fn add_table(
         return Err(invalid("table.headers", "header exceeds bounded layout"));
     }
     let mut rows = Vec::new();
+    let mut anchors = std::collections::BTreeMap::new();
     let mut used = header_height;
-    for row in &t.rows {
+    for (row_index, row) in t.rows.iter().enumerate() {
         let wrapped = row
             .iter()
             .map(|v| m.wrap(v, 11.0, col_width))
@@ -343,12 +403,18 @@ fn add_table(
                             rows,
                         },
                         notes: notes.into(),
+                        anchors: std::mem::take(&mut anchors),
                     },
                     m,
                     max,
                 )?;
                 rows = Vec::new();
                 used = header_height;
+            }
+            if start == 0 {
+                if let Some(id) = row_ids.and_then(|ids| ids.get(row_index)) {
+                    anchors.insert(id.clone(), BODY_TOP - 12.0 + used);
+                }
             }
             used += height;
             rows.push(part);
@@ -361,6 +427,7 @@ fn add_table(
                 title: title.into(),
                 body: PageBody::Table { headers, rows },
                 notes: notes.into(),
+                anchors,
             },
             m,
             max,
@@ -374,3 +441,11 @@ pub(crate) fn row_height(row: &[Vec<String>]) -> f64 {
 pub(crate) const COLORS: [&str; 8] = [
     "2563EB", "B45309", "047857", "9333EA", "BE123C", "0369A1", "525252", "A21CAF",
 ];
+
+pub(crate) fn destination(pages: &[Page], target: &str) -> ReportResult<(usize, f64)> {
+    pages
+        .iter()
+        .enumerate()
+        .find_map(|(index, page)| page.anchors.get(target).map(|top| (index, *top)))
+        .ok_or_else(|| invalid("links.target_id", "target has no laid-out content"))
+}

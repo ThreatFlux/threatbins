@@ -22,13 +22,35 @@ pub(crate) fn render(d: &ReportDocument, digest: &str, font: &[u8]) -> String {
         e(&d.comparison)
     );
     for section in &d.sections {
-        write!(h, "<section><h2>{}</h2>", e(&section.title)).unwrap();
+        write!(
+            h,
+            "<section id=\"{}\"><h2>{}</h2>",
+            e(&section.id),
+            e(&section.title)
+        )
+        .unwrap();
         for block in &section.blocks {
             match block {
                 ReportBlock::Paragraph { text } => {
                     write!(h, "<p class=\"prose\">{}</p>", e(text)).unwrap();
                 }
                 ReportBlock::Table { table } => table_html(&mut h, table),
+                ReportBlock::AnchoredTable { table, row_ids } => {
+                    table_html_anchors(&mut h, table, Some(row_ids))
+                }
+                ReportBlock::Links { links } => {
+                    h.push_str("<nav aria-label=\"Related report content\"><ul>");
+                    for link in links {
+                        write!(
+                            h,
+                            "<li><a href=\"#{}\">{}</a></li>",
+                            e(&link.target_id),
+                            e(&link.label)
+                        )
+                        .unwrap();
+                    }
+                    h.push_str("</ul></nav>");
+                }
                 ReportBlock::Chart { chart: c } => {
                     write!(
                         h,
@@ -83,14 +105,21 @@ pub(crate) fn render(d: &ReportDocument, digest: &str, font: &[u8]) -> String {
     h
 }
 fn table_html(h: &mut String, t: &ReportTable) {
+    table_html_anchors(h, t, None);
+}
+fn table_html_anchors(h: &mut String, t: &ReportTable, row_ids: Option<&[String]>) {
     h.push_str("<div class=\"table-scroll\"><table>");
     write!(h, "<caption>{}</caption><thead><tr>", e(&t.caption)).unwrap();
     for x in &t.headers {
         write!(h, "<th scope=\"col\">{}</th>", e(x)).unwrap();
     }
     h.push_str("</tr></thead><tbody>");
-    for row in &t.rows {
-        h.push_str("<tr>");
+    for (index, row) in t.rows.iter().enumerate() {
+        if let Some(id) = row_ids.and_then(|ids| ids.get(index)) {
+            write!(h, "<tr id=\"{}\">", e(id)).unwrap();
+        } else {
+            h.push_str("<tr>");
+        }
         for x in row {
             write!(h, "<td>{}</td>", e(x)).unwrap();
         }

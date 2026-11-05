@@ -3,9 +3,19 @@ MSRV := 1.95.0
 CARGO_BUILD_JOBS ?= 2
 export CARGO_BUILD_JOBS
 MANIFESTS := office-sdk/Cargo.toml api-test/Cargo.toml
+PPTX_INTEROP_OUTPUT ?= office-sdk/target/pptx-interop
 
 .PHONY: ci fmt-check check test docs audit msrv-check
 ci: fmt-check check test docs audit msrv-check
+
+# Optional development tool; CI runs it after the Rust gates. The Rust SDK and
+# consuming applications do not require a .NET runtime.
+.PHONY: validate-pptx
+validate-pptx:
+	cargo +$(RUST_STABLE) run --manifest-path office-sdk/Cargo.toml --example report_render --all-features --locked -- office-sdk/tests/fixtures/executive-report.json $(PPTX_INTEROP_OUTPUT)
+	cargo +$(RUST_STABLE) run --manifest-path office-sdk/Cargo.toml --example report_render --all-features --locked -- office-sdk/tests/fixtures/navigation-report.json $(PPTX_INTEROP_OUTPUT)/navigation
+	cd tools/pptx-validation && dotnet restore --locked-mode
+	cd tools/pptx-validation && dotnet run --configuration Release --no-restore -- "$(abspath $(PPTX_INTEROP_OUTPUT))/report.pptx" "$(abspath $(PPTX_INTEROP_OUTPUT))/navigation/report.pptx"
 
 fmt-check:
 	@set -eu; for manifest in $(MANIFESTS); do cargo +$(RUST_STABLE) fmt --manifest-path $$manifest --all -- --check; done
