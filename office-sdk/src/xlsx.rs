@@ -501,7 +501,6 @@ impl XlsxDocument {
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
 
-        let image_id = format!("image{}", self.images.len() + 1);
         let content_type = match path.extension().and_then(|s| s.to_str()) {
             Some("png") => "image/png",
             Some("jpg") | Some("jpeg") => "image/jpeg",

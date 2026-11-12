@@ -2,7 +2,7 @@ use crate::OfficeDocument;
 use crate::error::{OfficeError, Result};
 use base64::Engine;
 use chrono::{DateTime, Utc};
-use mail_parser::{MessageParser, MimeHeaders};
+use mail_parser::MessageParser;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -1166,7 +1166,7 @@ impl OfficeDocument for EmlDocument {
 
         if let Some(to_list) = message.to() {
             eml_doc.headers.to = to_list
-                .iter()
+                .mailboxes()
                 .map(|addr| {
                     EmailAddress::new(addr.address().unwrap_or("unknown@example.com"), addr.name())
                 })
@@ -1204,9 +1204,9 @@ impl OfficeDocument for EmlDocument {
         // Extract attachments
         for attachment in message.attachments() {
             if let Some(filename) = attachment.attachment_name() {
-                let attachment_data = attachment.contents();
+                let attachment_data = attachment.decoded();
                 let _attachment_id =
-                    eml_doc.add_attachment_from_bytes(attachment_data, filename, None)?;
+                    eml_doc.add_attachment_from_bytes(attachment_data.as_ref(), filename, None)?;
             }
         }
 

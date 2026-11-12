@@ -1,0 +1,113 @@
+name: Release Office SDK
+
+# Only a successful push-to-main CI run may publish its exact source revision.
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers] Trusted same-repository main pushes only.
+    workflows: [Rust CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-office-sdk
+  cancel-in-progress: false
+
+jobs:
+  source:
+    name: Validate the successful main source
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      current: ${{ steps.source.outputs.current }}
+    steps:
+      - name: Bind publication to the current main commit
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "current=$([[ "$main_sha" == "$SOURCE_SHA" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish and verify the immutable SDK package
+    needs: source
+    if: needs.source.outputs.current == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # Create versioned releases and upload their package/checksum assets.
+    steps:
+      - name: Checkout the validated main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - name: Install the release compiler
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.99.1
+      - name: Install native package dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libssl-dev pkg-config
+      - name: Package and verify all SDK features
+        run: cargo package --manifest-path office-sdk/Cargo.toml --all-features --locked
+      - name: Publish the immutable source package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("office-sdk/Cargo.toml", "rb"))["package"]["version"])')
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          tag="office-sdk-v$version"
+          package="office-sdk/target/package/office-sdk-$version.crate"
+          test -s "$package"
+          (cd office-sdk/target/package && sha256sum "office-sdk-$version.crate" > "office-sdk-$version.crate.sha256")
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" > tag.json 2>/dev/null; then
+            # Existing versions are immutable; a normal later commit must bump
+            # the version to publish again rather than replacing old assets.
+            tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
+            if [[ "$tag_sha" != "$SOURCE_SHA" ]]; then
+              echo "::notice::Version $version was already released from $tag_sha; retaining its immutable assets"
+              exit 0
+            fi
+          fi
+          printf 'Source commit: %s\n\nVerified by Rust CI, including all-feature tests, package audits, MSRV and report interoperability.\n\nInstall from this immutable Git tag; this release does not claim publication to crates.io.\n' "$SOURCE_SHA" > release-notes.txt
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,targetCommitish,assets > release.json 2>/dev/null; then
+            # Recover a draft or missing asset upload for this exact source;
+            # existing assets are retained and verified rather than clobbered.
+            draft=$(jq -r .isDraft release.json)
+            if [[ "$draft" == true ]]; then
+              [[ "$(jq -r .targetCommitish release.json)" == "$SOURCE_SHA" ]]
+            else
+              [[ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)" == "$SOURCE_SHA" ]]
+            fi
+            for asset in "$package" "$package.sha256"; do
+              name=$(basename "$asset")
+              if ! jq -e --arg name "$name" '.assets[] | select(.name == $name)' release.json >/dev/null; then
+                gh release upload "$tag" "$asset" --repo "$GITHUB_REPOSITORY"
+              fi
+            done
+            if [[ "$draft" == true ]]; then
+              gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
+            fi
+          else
+            gh release create "$tag" "$package" "$package.sha256" \
+              --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" \
+              --title "Office SDK $version" --notes-file release-notes.txt
+          fi
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'office-sdk-*.crate*' --dir verify-release
+          (cd verify-release && sha256sum --check "office-sdk-$version.crate.sha256")
+          cmp "$package" "verify-release/office-sdk-$version.crate"

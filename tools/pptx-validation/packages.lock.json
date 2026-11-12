@@ -1,7 +1,7 @@
 {
   "version": 1,
   "dependencies": {
-    "net10.0": {
+    "net11.0": {
       "DocumentFormat.OpenXml": {
         "type": "Direct",
         "requested": "[3.5.1, )",
@@ -11,6 +11,12 @@
           "DocumentFormat.OpenXml.Framework": "3.5.1"
         }
       },
+      "System.IO.Packaging": {
+        "type": "Direct",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "OGuoYphprhaXgQgzsCgLVpTn8STkTxFmf1Rv/2zkMMFsz1AsB4pYdUgDS2xAsByA2w3rsOphnaR12xJE3pUWeg=="
+      },
       "DocumentFormat.OpenXml.Framework": {
         "type": "Transitive",
         "resolved": "3.5.1",
@@ -18,11 +24,6 @@
         "dependencies": {
           "System.IO.Packaging": "10.0.2"
         }
-      },
-      "System.IO.Packaging": {
-        "type": "Transitive",
-        "resolved": "10.0.2",
-        "contentHash": "JTpM4z0wpoIHHDvlCU27HsXo+zVnpWib94HXQpzzr+jc/P9NYf4w353AK4MXyGq/grm1mbLi7eXsOsDU8sGmNg=="
       }
     }
   }

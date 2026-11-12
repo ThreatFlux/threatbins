@@ -38,8 +38,9 @@ threatbins/
 
 ### Prerequisites
 
-- Rust 1.95.0 or higher
+- Rust 1.98.0 or higher for the current SDK
 - Cargo (Rust package manager)
+- .NET SDK 11.0.100 for the optional `make validate-pptx` schema validator
 
 ### Installation
 

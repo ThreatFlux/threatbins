@@ -3,6 +3,50 @@ use office_sdk::{OfficeDocument, docx::DocxDocument, pptx::PptxDocument, xlsx::X
 use std::io::{Cursor, Write};
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
+#[cfg(feature = "full")]
+#[test]
+fn eml_parser_preserves_group_recipients_and_decodes_binary_attachments() {
+    use office_sdk::eml::EmlDocument;
+
+    let raw = concat!(
+        "From: Alice <alice@example.com>\r\n",
+        "To: Team: Bob <bob@example.com>, Carol <carol@example.com>;\r\n",
+        "Subject: Dependency compatibility\r\n",
+        "MIME-Version: 1.0\r\n",
+        "Content-Type: multipart/mixed; boundary=parts\r\n\r\n",
+        "--parts\r\nContent-Type: text/plain\r\n\r\nHello\r\n",
+        "--parts\r\nContent-Type: application/octet-stream\r\n",
+        "Content-Disposition: attachment; filename=sample.bin\r\n",
+        "Content-Transfer-Encoding: base64\r\n\r\nAP+AQQ==\r\n",
+        "--parts--\r\n",
+    );
+    let parsed = EmlDocument::from_bytes(raw.as_bytes()).unwrap();
+    assert_eq!(parsed.headers.from.email, "alice@example.com");
+    assert_eq!(
+        parsed
+            .headers
+            .to
+            .iter()
+            .map(|to| to.email.as_str())
+            .collect::<Vec<_>>(),
+        ["bob@example.com", "carol@example.com"]
+    );
+    assert!(
+        parsed
+            .body
+            .text_content
+            .as_deref()
+            .unwrap()
+            .contains("Hello")
+    );
+    let attachment = parsed
+        .attachments
+        .values()
+        .next()
+        .expect("decoded attachment");
+    assert_eq!(attachment.data, [0, 255, 128, 65]);
+}
+
 #[test]
 fn office_validation_rejects_unsupported_entry_compression_without_panicking() {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
