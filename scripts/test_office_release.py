@@ -34,7 +34,9 @@ class OfficeReleaseTests(unittest.TestCase):
         name = "office-sdk-0.3.0.crate"
         path = directory / name
         contents = {
-            ".cargo_vcs_info.json": json.dumps({"git": {"sha1": source, "dirty": dirty}}).encode(),
+            ".cargo_vcs_info.json": json.dumps(
+                {"git": {"sha1": source, "dirty": dirty}}
+            ).encode(),
             "Cargo.toml": b'[package]\nname="office-sdk"\nversion="0.3.0"\n',
         }
         with tarfile.open(path, "w:gz") as archive:

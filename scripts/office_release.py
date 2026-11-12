@@ -16,23 +16,40 @@ VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 
 def reuse_existing(source: str, published: str | None, changed: bool) -> bool:
     """A config-only commit may reuse an unchanged, immutable package version."""
-    if not SHA.fullmatch(source) or published is not None and not SHA.fullmatch(published):
+    if (
+        not SHA.fullmatch(source)
+        or published is not None
+        and not SHA.fullmatch(published)
+    ):
         raise ValueError("expected full source commit SHAs")
     if published is None or source == published:
         return False
     if changed:
-        raise ValueError("office-sdk inputs changed: bump the package version before publishing")
+        raise ValueError(
+            "office-sdk inputs changed: bump the package version before publishing"
+        )
     return True
 
 
 def plan(source: str, published: str | None, changed: bool) -> dict:
     """Use the complete package-tree comparison made by the read-only workflow."""
-    if not SHA.fullmatch(source) or published is not None and not SHA.fullmatch(published):
+    if (
+        not SHA.fullmatch(source)
+        or published is not None
+        and not SHA.fullmatch(published)
+    ):
         raise ValueError("expected full source commit SHAs")
-    version = tomllib.loads((ROOT / "office-sdk/Cargo.toml").read_text())["package"]["version"]
+    version = tomllib.loads((ROOT / "office-sdk/Cargo.toml").read_text())["package"][
+        "version"
+    ]
     if not VERSION.fullmatch(version):
         raise ValueError("expected a stable package version")
-    return {"version": version, "tag": f"office-sdk-v{version}", "reuse": reuse_existing(source, published, changed), "published_source": published or source}
+    return {
+        "version": version,
+        "tag": f"office-sdk-v{version}",
+        "reuse": reuse_existing(source, published, changed),
+        "published_source": published or source,
+    }
 
 
 def verify(directory: Path, version: str, source: str) -> str:
@@ -49,10 +66,15 @@ def verify(directory: Path, version: str, source: str) -> str:
     prefix = f"office-sdk-{version}/"
     with tarfile.open(archive, "r:gz") as package:
         vcs = json.load(package.extractfile(prefix + ".cargo_vcs_info.json"))
-        manifest = tomllib.loads(package.extractfile(prefix + "Cargo.toml").read().decode())
+        manifest = tomllib.loads(
+            package.extractfile(prefix + "Cargo.toml").read().decode()
+        )
     if vcs["git"]["sha1"] != source or vcs["git"].get("dirty", False):
         raise ValueError("package VCS identity does not match the release source")
-    if manifest["package"]["name"] != "office-sdk" or manifest["package"]["version"] != version:
+    if (
+        manifest["package"]["name"] != "office-sdk"
+        or manifest["package"]["version"] != version
+    ):
         raise ValueError("package manifest does not match the release version")
     return actual
 
