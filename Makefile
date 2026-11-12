@@ -1,12 +1,12 @@
 RUST_STABLE := 1.99.1
-MSRV := 1.95.0
+MSRV := 1.98.0
 CARGO_BUILD_JOBS ?= 2
 export CARGO_BUILD_JOBS
 MANIFESTS := office-sdk/Cargo.toml api-test/Cargo.toml
 PPTX_INTEROP_OUTPUT ?= office-sdk/target/pptx-interop
 
-.PHONY: ci fmt-check check test docs audit msrv-check
-ci: fmt-check check test docs audit msrv-check
+.PHONY: ci fmt-check lint check test docs audit msrv-check
+ci: fmt-check lint check test docs audit msrv-check
 
 # Optional development tool; CI runs it after the Rust gates. The Rust SDK and
 # consuming applications do not require a .NET runtime.
@@ -19,6 +19,9 @@ validate-pptx:
 
 fmt-check:
 	@set -eu; for manifest in $(MANIFESTS); do cargo +$(RUST_STABLE) fmt --manifest-path $$manifest --all -- --check; done
+
+lint:
+	@set -eu; for manifest in $(MANIFESTS); do cargo +$(RUST_STABLE) clippy --manifest-path $$manifest --all-targets --all-features --locked; done
 
 check:
 	@set -eu; for manifest in $(MANIFESTS); do cargo +$(RUST_STABLE) check --manifest-path $$manifest --all-targets --all-features --locked; done

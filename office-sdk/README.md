@@ -14,7 +14,7 @@ A Rust SDK for creating and parsing Microsoft Office compressed formats (DOCX, X
 - ✅ **XLSX Spreadsheets** with full functionality
 - ✅ **PPTX Presentations** with slide management
 - ✅ **Markdown ↔ DOCX conversion** (bidirectional)
-- ✅ Built on stable Rust 1.95.0
+- ✅ Supports Rust 1.98.0 and newer
 - ✅ Memory-efficient ZIP-based implementation
 - ✅ Comprehensive error handling
 - ✅ Type-safe APIs
@@ -26,8 +26,19 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-office-sdk = "0.1.0"
+office-sdk = { git = "https://github.com/ThreatFlux/threatbins", tag = "office-sdk-v0.3.0" }
 ```
+
+The repository publishes immutable GitHub releases after the matching `main`
+commit passes Rust CI, including the report interoperability checks. Each
+`office-sdk-vX.Y.Z` release includes the Cargo source package and its SHA256
+checksum. The SDK is distributed from this Git repository; a repository version
+does not imply a crates.io publication.
+
+Version 0.3 updates mail-parser to stable 1.0 and the PDF and ZIP libraries to
+their current stable APIs. Its minimum Rust version is 1.98.0, as required by
+mail-parser. The 0.2.0 source remains covered by a separate Rust 1.95.0
+compatibility job and remains available through its immutable Git revision.
 
 ## Quick Start
 
