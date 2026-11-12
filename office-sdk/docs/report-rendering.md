@@ -167,7 +167,8 @@ The report inspector also rejects incomplete default DrawingML theme style
 lists. Each fill, line, effect and background-fill list supplies at least three
 entries. CI independently validates the generated presentation and its embedded
 workbooks with Microsoft's Open XML schemas; this does not require .NET in SDK
-consumers. With .NET SDK 10.0.403 installed, run `make validate-pptx` from the
+consumers. With .NET SDK 11.0.100 installed (matching the non-rolling SDK pin in
+`tools/pptx-validation/global.json`), run `make validate-pptx` from the
 repository root to repeat that check. Validator packages and the SDK are pinned
 under `tools/pptx-validation/`.
 
