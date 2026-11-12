@@ -49,7 +49,18 @@ pub fn validate_office_format<R: Read + std::io::Seek>(
     required_files: &[&str],
 ) -> Result<()> {
     let file_names: Vec<String> = (0..archive.len())
-        .map(|i| Ok(archive.by_index(i)?.name()?.into_owned()))
+        .map(|i| {
+            let entry = archive.by_index(i)?;
+            // ZIP 9.5 opens entries lazily; by_index no longer rejects an
+            // unsupported codec until content is read. Keep validation's
+            // earlier fail-closed behavior without decompressing each entry.
+            if !zip::SUPPORTED_COMPRESSION_METHODS.contains(&entry.compression()) {
+                return Err(OfficeError::InvalidFormat(
+                    "Unsupported ZIP entry compression".to_string(),
+                ));
+            }
+            Ok(entry.name()?.into_owned())
+        })
         .collect::<Result<_>>()?;
 
     for required_file in required_files {
