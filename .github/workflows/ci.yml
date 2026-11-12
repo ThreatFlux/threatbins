@@ -25,6 +25,8 @@ jobs:
           components: rustfmt, clippy
       - name: Install cargo-audit from registry-verified source
         run: cargo install --locked --version 0.23.0 cargo-audit
+      - name: Validate immutable package publication rules
+        run: python3 -m unittest discover -s scripts -p test_office_release.py
       - name: Validate all targets, tests, docs, audits and MSRV
         run: make ci
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
