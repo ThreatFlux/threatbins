@@ -26,7 +26,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-office-sdk = { git = "https://github.com/ThreatFlux/threatbins", tag = "office-sdk-v0.3.0" }
+office-sdk = { git = "https://github.com/ThreatFlux/threatbins", tag = "office-sdk-v0.3.1" }
 ```
 
 The repository publishes immutable GitHub releases after the matching `main`
