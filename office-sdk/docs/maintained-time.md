@@ -27,6 +27,11 @@ second. Its supported calendar range is years -9999 through 9999.
 
 File metadata JSON still contains RFC 3339 strings and nullable optional fields.
 Offsets normalize to UTC and fractional seconds retain nanosecond precision.
+Present spreadsheet/presentation dates outside the supported range, or malformed
+dates, return an error before metadata can be replaced. Missing dates retain the
+existing current-time default. Jiff's exact UTC timestamp bounds are narrower
+than its civil calendar at the extreme endpoints; handle parse errors instead
+of assuming every date in year 9999 is representable.
 Spreadsheet/presentation XML keeps explicit `+00:00` timestamps. DOCX and email
 headers keep their existing whole-second formatting. Parsed email dates that
 exceed the supported timestamp range return an error instead of silently using

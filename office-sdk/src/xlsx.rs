@@ -729,20 +729,7 @@ impl OfficeDocument for XlsxDocument {
             last_modified_by,
             revision,
         ) = if let Some(ref core_xml) = core_properties {
-            Self::parse_core_properties(core_xml).unwrap_or_else(|_| {
-                (
-                    "Office SDK".to_string(),
-                    "New Spreadsheet".to_string(),
-                    "".to_string(),
-                    "".to_string(),
-                    "".to_string(),
-                    "".to_string(),
-                    now,
-                    now,
-                    "Office SDK".to_string(),
-                    1,
-                )
-            })
+            Self::parse_core_properties(core_xml)?
         } else {
             (
                 "Office SDK".to_string(),
@@ -913,14 +900,18 @@ impl XlsxDocument {
                         "category" => category = text,
                         "lastModifiedBy" => last_modified_by = text,
                         "created" => {
-                            if let Ok(dt) = text.parse::<Timestamp>() {
-                                created = dt;
-                            }
+                            created = text.parse::<Timestamp>().map_err(|_| {
+                                OfficeError::InvalidFormat(
+                                    "Unsupported spreadsheet creation timestamp".to_owned(),
+                                )
+                            })?;
                         }
                         "modified" => {
-                            if let Ok(dt) = text.parse::<Timestamp>() {
-                                modified = dt;
-                            }
+                            modified = text.parse::<Timestamp>().map_err(|_| {
+                                OfficeError::InvalidFormat(
+                                    "Unsupported spreadsheet modification timestamp".to_owned(),
+                                )
+                            })?;
                         }
                         "revision" => {
                             if let Ok(rev) = text.parse::<u32>() {

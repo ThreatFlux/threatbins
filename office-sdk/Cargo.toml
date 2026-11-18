@@ -42,7 +42,7 @@ console = { version = "0.16.6", optional = true }
 dialoguer = { version = "0.12.0", optional = true }
 colored = { version = "3.1.1", optional = true }
 dirs = { version = "7.0.0", optional = true }
-lettre = { version = "0.11.23", optional = true }
+lettre = { version = "0.11.24", optional = true }
 mail-parser = { version = "1.0.1", optional = true }
 mime = { version = "0.3.18", optional = true }
 time = { version = "0.3.55", optional = true }
