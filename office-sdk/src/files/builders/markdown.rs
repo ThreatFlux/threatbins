@@ -37,7 +37,7 @@ impl MarkdownBuilder {
 
         content.push_str(&format!(
             "**Date:** {}\n\n",
-            metadata.created.format("%Y-%m-%d")
+            metadata.created.strftime("%Y-%m-%d")
         ));
 
         content.push_str("---\n\n");
@@ -100,7 +100,7 @@ impl MarkdownBuilder {
 
         md_content.push_str(&format!(
             "**Last updated:** {}\n",
-            metadata.modified.format("%Y-%m-%d")
+            metadata.modified.strftime("%Y-%m-%d")
         ));
 
         let doc = MarkdownDocument::from_markdown(&md_content)?;
@@ -165,7 +165,10 @@ impl MarkdownBuilder {
         if let Some(ref author) = metadata.author {
             md_content.push_str(&format!("author: {}\n", author));
         }
-        md_content.push_str(&format!("date: {}\n", metadata.created.format("%Y-%m-%d")));
+        md_content.push_str(&format!(
+            "date: {}\n",
+            metadata.created.strftime("%Y-%m-%d")
+        ));
         if !metadata.keywords.is_empty() {
             md_content.push_str(&format!("tags: [{}]\n", metadata.keywords.join(", ")));
         }
@@ -177,7 +180,7 @@ impl MarkdownBuilder {
 
         md_content.push_str(&format!(
             "*Published on {}*\n\n",
-            metadata.created.format("%B %d, %Y")
+            metadata.created.strftime("%B %d, %Y")
         ));
 
         md_content.push_str(content);
@@ -210,7 +213,7 @@ impl MarkdownBuilder {
 
         md_content.push_str(&format!(
             "**Date:** {}\n\n",
-            metadata.created.format("%Y-%m-%d %H:%M")
+            metadata.created.strftime("%Y-%m-%d %H:%M")
         ));
 
         if !metadata.keywords.is_empty() {

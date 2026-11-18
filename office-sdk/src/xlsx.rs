@@ -1,10 +1,10 @@
 use crate::OfficeDocument;
+use crate::Timestamp;
 use crate::error::{OfficeError, Result};
 use crate::utils::{
     decode_xml_reference, decode_xml_text, read_zip_entry, read_zip_entry_bytes,
     validate_office_format,
 };
-use chrono::{DateTime, Utc};
 use quick_xml::{Reader, events::Event};
 use std::collections::HashMap;
 use std::fs;
@@ -29,8 +29,8 @@ pub struct XlsxDocument {
     pub keywords: String,
     pub description: String,
     pub category: String,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
+    pub created: Timestamp,
+    pub modified: Timestamp,
     pub last_modified_by: String,
     pub revision: u32,
     pub page_setup: PageSetup,
@@ -163,7 +163,7 @@ impl Default for XlsxDocument {
 
 impl XlsxDocument {
     pub fn new() -> Self {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let mut doc = XlsxDocument {
             workbook: Self::default_workbook_xml(),
             worksheets: HashMap::new(),
@@ -205,32 +205,32 @@ impl XlsxDocument {
     pub fn set_author(&mut self, author: &str) {
         self.author = author.to_string();
         self.last_modified_by = author.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_title(&mut self, title: &str) {
         self.title = title.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_subject(&mut self, subject: &str) {
         self.subject = subject.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_description(&mut self, description: &str) {
         self.description = description.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_keywords(&mut self, keywords: &str) {
         self.keywords = keywords.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_category(&mut self, category: &str) {
         self.category = category.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_page_size(&mut self, paper_size: PaperSize) {
@@ -274,7 +274,7 @@ impl XlsxDocument {
                 height,
             },
         );
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(id)
     }
 
@@ -301,14 +301,14 @@ impl XlsxDocument {
                 style: TableStyle::default(),
             },
         );
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(id)
     }
 
     /// Store an already compiled VBA project (vbaProject.bin).
     pub fn add_vba_macro(&mut self, vba_data: Vec<u8>) -> Result<()> {
         self.vba_project = Some(vba_data);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
@@ -368,8 +368,12 @@ impl XlsxDocument {
             escape(&self.category),
             escape(&self.last_modified_by),
             self.revision,
-            self.created.to_rfc3339(),
-            self.modified.to_rfc3339()
+            self.created
+                .display_with_offset(jiff::tz::Offset::UTC)
+                .to_string(),
+            self.modified
+                .display_with_offset(jiff::tz::Offset::UTC)
+                .to_string()
         )
     }
 
@@ -712,7 +716,7 @@ impl OfficeDocument for XlsxDocument {
         }
 
         // Parse metadata from core properties if available
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (
             author,
             title,
@@ -864,8 +868,8 @@ impl XlsxDocument {
         String,
         String,
         String,
-        DateTime<Utc>,
-        DateTime<Utc>,
+        Timestamp,
+        Timestamp,
         String,
         u32,
     )> {
@@ -881,8 +885,8 @@ impl XlsxDocument {
         let mut description = "".to_string();
         let mut keywords = "".to_string();
         let mut category = "".to_string();
-        let mut created = Utc::now();
-        let mut modified = Utc::now();
+        let mut created = Timestamp::now();
+        let mut modified = Timestamp::now();
         let mut last_modified_by = "Office SDK".to_string();
         let mut revision = 1;
 
@@ -909,13 +913,13 @@ impl XlsxDocument {
                         "category" => category = text,
                         "lastModifiedBy" => last_modified_by = text,
                         "created" => {
-                            if let Ok(dt) = DateTime::parse_from_rfc3339(&text) {
-                                created = dt.with_timezone(&Utc);
+                            if let Ok(dt) = text.parse::<Timestamp>() {
+                                created = dt;
                             }
                         }
                         "modified" => {
-                            if let Ok(dt) = DateTime::parse_from_rfc3339(&text) {
-                                modified = dt.with_timezone(&Utc);
+                            if let Ok(dt) = text.parse::<Timestamp>() {
+                                modified = dt;
                             }
                         }
                         "revision" => {
@@ -990,6 +994,6 @@ pub struct DocumentStats {
     pub total_cells: usize,
     pub has_vba: bool,
     pub author: String,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
+    pub created: Timestamp,
+    pub modified: Timestamp,
 }

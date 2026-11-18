@@ -99,7 +99,9 @@ async fn create_document(
             );
 
             let mime_type = get_mime_type(&req.format);
-            let created_at = chrono::Utc::now().to_rfc3339();
+            let created_at = jiff::Timestamp::now()
+                .display_with_offset(jiff::tz::Offset::UTC)
+                .to_string();
 
             let file_response = FileResponse {
                 id: file_id.clone(),
@@ -133,7 +135,9 @@ async fn convert_document(
             let file_id = uuid::Uuid::new_v4().to_string();
             let filename = format!("converted_document.{}", req.target_format);
             let mime_type = get_mime_type(&req.target_format);
-            let created_at = chrono::Utc::now().to_rfc3339();
+            let created_at = jiff::Timestamp::now()
+                .display_with_offset(jiff::tz::Offset::UTC)
+                .to_string();
 
             let file_response = FileResponse {
                 id: file_id.clone(),
@@ -185,7 +189,9 @@ async fn batch_create(
                 );
 
                 let mime_type = get_mime_type(&create_req.format);
-                let created_at = chrono::Utc::now().to_rfc3339();
+                let created_at = jiff::Timestamp::now()
+                    .display_with_offset(jiff::tz::Offset::UTC)
+                    .to_string();
 
                 let file_response = FileResponse {
                     id: file_id.clone(),
@@ -270,7 +276,7 @@ fn convert_mock_document(
         this would properly convert between different document formats.]",
         source_format.to_uppercase(),
         target_format.to_uppercase(),
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        jiff::Timestamp::now().strftime("%Y-%m-%d %H:%M:%S"),
         content
     );
 
@@ -291,7 +297,7 @@ fn create_mock_docx(title: &str, author: &str, content: &str) -> String {
         this would be a properly formatted Microsoft Word document with XML structure.]",
         title,
         author,
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        jiff::Timestamp::now().strftime("%Y-%m-%d %H:%M:%S"),
         content
     )
 }
@@ -310,7 +316,7 @@ fn create_mock_pdf(title: &str, author: &str, content: &str) -> String {
         this would be a properly formatted PDF with binary structure and text layout.]",
         title,
         author,
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        jiff::Timestamp::now().strftime("%Y-%m-%d %H:%M:%S"),
         content
     )
 }
@@ -325,7 +331,7 @@ fn create_mock_xlsx(title: &str, content: &str) -> String {
         Worksheet: Sheet1\n\
         -----------------\n",
         title,
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
+        jiff::Timestamp::now().strftime("%Y-%m-%d %H:%M:%S")
     );
 
     for (i, row) in rows.iter().enumerate() {
@@ -351,7 +357,7 @@ fn create_mock_pptx(title: &str, author: &str, content: &str) -> String {
         Created: {}\n\n",
         title,
         author,
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
+        jiff::Timestamp::now().strftime("%Y-%m-%d %H:%M:%S")
     );
 
     pptx_content.push_str("Slide 1: Title Slide\n");
@@ -393,7 +399,7 @@ fn create_mock_eml(title: &str, author: &str, content: &str) -> String {
         [This is a mock EML document for testing the API.]",
         author,
         title,
-        chrono::Utc::now().format("%a, %d %b %Y %H:%M:%S +0000"),
+        jiff::Timestamp::now().strftime("%a, %d %b %Y %H:%M:%S +0000"),
         content
     )
 }
@@ -431,7 +437,7 @@ async fn get_supported_formats() -> Result<impl warp::Reply, Infallible> {
 async fn health_check() -> Result<impl warp::Reply, Infallible> {
     let status = serde_json::json!({
         "status": "OK",
-        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "timestamp": jiff::Timestamp::now().display_with_offset(jiff::tz::Offset::UTC).to_string(),
         "version": "1.0.0",
         "service": "Office SDK API"
     });

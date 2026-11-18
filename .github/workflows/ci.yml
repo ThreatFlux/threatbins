@@ -29,6 +29,10 @@ jobs:
         run: python3 -m unittest discover -s scripts -p test_office_release.py
       - name: Validate all targets, tests, docs, audits and MSRV
         run: make ci
+      - name: Validate maintained timestamps and narrow feature boundaries
+        run: |
+          cargo +1.100.0 test --manifest-path office-sdk/Cargo.toml --lib --test maintained_time --no-default-features --features report --locked
+          cargo +1.100.0 test --manifest-path office-sdk/Cargo.toml --lib --test report_model --no-default-features --features report-model --locked
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: 11.0.100

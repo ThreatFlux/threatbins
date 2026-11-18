@@ -1,7 +1,7 @@
 use crate::OfficeDocument;
+use crate::Timestamp;
 use crate::error::{OfficeError, Result};
 use base64::Engine;
-use chrono::{DateTime, Utc};
 use mail_parser::MessageParser;
 use std::collections::HashMap;
 use std::fs;
@@ -23,8 +23,8 @@ pub struct EmlDocument {
     pub keywords: String,         // Keywords from headers or content
     pub description: String,      // Email body preview
     pub category: String,         // Email category/folder
-    pub created: DateTime<Utc>,   // Date sent
-    pub modified: DateTime<Utc>,  // Last modified
+    pub created: Timestamp,       // Date sent
+    pub modified: Timestamp,      // Last modified
     pub last_modified_by: String, // Last modifier
     pub revision: u32,            // Revision number
 
@@ -67,7 +67,7 @@ pub struct EmailHeaders {
     pub reply_to: Vec<EmailAddress>,
     pub sender: Option<EmailAddress>,
     pub return_path: Option<String>,
-    pub date: DateTime<Utc>,
+    pub date: Timestamp,
     pub subject: String,
     pub message_id: String,
     pub mime_version: String,
@@ -112,8 +112,8 @@ pub struct AttachmentInfo {
     pub checksum: Option<String>,
     pub is_inline: bool,
     pub description: Option<String>,
-    pub creation_date: Option<DateTime<Utc>>,
-    pub modification_date: Option<DateTime<Utc>>,
+    pub creation_date: Option<Timestamp>,
+    pub modification_date: Option<Timestamp>,
 }
 
 #[derive(Debug, Clone)]
@@ -162,7 +162,7 @@ pub struct SignatureInfo {
     pub certificate: Option<Vec<u8>>,
     pub is_valid: bool,
     pub signer_email: String,
-    pub signing_time: DateTime<Utc>,
+    pub signing_time: Timestamp,
     pub certificate_chain: Vec<Vec<u8>>,
 }
 
@@ -239,7 +239,7 @@ pub struct DocumentStats {
     pub has_tracking: bool,
     pub sender: String,
     pub subject: String,
-    pub date_sent: DateTime<Utc>,
+    pub date_sent: Timestamp,
     pub priority: EmailPriority,
     pub importance: EmailImportance,
 }
@@ -261,7 +261,7 @@ impl Default for EmailHeaders {
             reply_to: Vec::new(),
             sender: None,
             return_path: None,
-            date: Utc::now(),
+            date: Timestamp::now(),
             subject: "New Message".to_string(),
             message_id: format!("<{}@example.com>", Uuid::new_v4()),
             mime_version: "1.0".to_string(),
@@ -408,7 +408,7 @@ impl EmailAddress {
 
 impl EmlDocument {
     pub fn new() -> Self {
-        let now = Utc::now();
+        let now = Timestamp::now();
         EmlDocument {
             headers: EmailHeaders::default(),
             body: EmailBody::default(),
@@ -462,7 +462,7 @@ impl EmlDocument {
         self.author = author.to_string();
         self.headers.from =
             EmailAddress::parse(author).unwrap_or_else(|_| EmailAddress::new(author, None));
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         self.revision += 1;
     }
 
@@ -470,7 +470,7 @@ impl EmlDocument {
         self.title = title.to_string();
         self.subject = title.to_string();
         self.headers.subject = title.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         self.revision += 1;
     }
 
@@ -478,26 +478,26 @@ impl EmlDocument {
         self.subject = subject.to_string();
         self.title = subject.to_string();
         self.headers.subject = subject.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_keywords(&mut self, keywords: &str) {
         self.keywords = keywords.to_string();
         self.custom_headers
             .insert("X-Keywords".to_string(), keywords.to_string());
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_description(&mut self, description: &str) {
         self.description = description.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_category(&mut self, category: &str) {
         self.category = category.to_string();
         self.custom_headers
             .insert("X-Category".to_string(), category.to_string());
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     // Email-specific methods
@@ -508,31 +508,31 @@ impl EmlDocument {
         } else {
             email.to_string()
         };
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
     pub fn add_to(&mut self, email: &str, name: Option<&str>) -> Result<()> {
         self.headers.to.push(EmailAddress::new(email, name));
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
     pub fn add_cc(&mut self, email: &str, name: Option<&str>) -> Result<()> {
         self.headers.cc.push(EmailAddress::new(email, name));
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
     pub fn add_bcc(&mut self, email: &str, name: Option<&str>) -> Result<()> {
         self.headers.bcc.push(EmailAddress::new(email, name));
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
     pub fn set_reply_to(&mut self, email: &str, name: Option<&str>) -> Result<()> {
         self.headers.reply_to = vec![EmailAddress::new(email, name)];
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
@@ -542,7 +542,7 @@ impl EmlDocument {
         self.body.content_type = ContentType::text_plain();
         self.description =
             text.chars().take(100).collect::<String>() + if text.len() > 100 { "..." } else { "" };
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_html_body(&mut self, html: &str) {
@@ -576,7 +576,7 @@ impl EmlDocument {
 
         self.description = text_only.chars().take(100).collect::<String>()
             + if text_only.len() > 100 { "..." } else { "" };
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_multipart_body(&mut self, text: &str, html: &str) {
@@ -585,7 +585,7 @@ impl EmlDocument {
         self.body.content_type = ContentType::multipart_alternative();
         self.description =
             text.chars().take(100).collect::<String>() + if text.len() > 100 { "..." } else { "" };
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_markdown_body(&mut self, markdown: &str) {
@@ -602,7 +602,7 @@ impl EmlDocument {
         self.body.content_type = ContentType::multipart_alternative();
         self.description =
             text.chars().take(100).collect::<String>() + if text.len() > 100 { "..." } else { "" };
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     // Attachment methods (matching other Office formats)
@@ -649,12 +649,12 @@ impl EmlDocument {
             checksum: Some(checksum),
             is_inline: false,
             description: description.map(|s| s.to_string()),
-            creation_date: Some(Utc::now()),
-            modification_date: Some(Utc::now()),
+            creation_date: Some(Timestamp::now()),
+            modification_date: Some(Timestamp::now()),
         };
 
         self.attachments.insert(attachment_id.clone(), attachment);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(attachment_id)
     }
 
@@ -676,7 +676,7 @@ impl EmlDocument {
 
         self.embedded_objects
             .insert(attachment_id.clone(), embedded_object);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(attachment_id)
     }
 
@@ -689,7 +689,7 @@ impl EmlDocument {
             EmailPriority::High => "2".to_string(),
             EmailPriority::Urgent => "1".to_string(),
         });
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_importance(&mut self, importance: EmailImportance) {
@@ -702,7 +702,7 @@ impl EmlDocument {
                 EmailImportance::High => "High".to_string(),
             },
         );
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_sensitivity(&mut self, sensitivity: EmailSensitivity) {
@@ -716,7 +716,7 @@ impl EmlDocument {
                 EmailSensitivity::Confidential => "Confidential".to_string(),
             },
         );
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn request_delivery_receipt(&mut self) {
@@ -725,7 +725,7 @@ impl EmlDocument {
             "Return-Receipt-To".to_string(),
             self.headers.from.email.clone(),
         );
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn request_read_receipt(&mut self) {
@@ -734,14 +734,14 @@ impl EmlDocument {
             "Disposition-Notification-To".to_string(),
             self.headers.from.email.clone(),
         );
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     // Advanced features
     pub fn add_custom_header(&mut self, name: &str, value: &str) {
         self.custom_headers
             .insert(name.to_string(), value.to_string());
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn add_tag(&mut self, tag: &str) {
@@ -749,7 +749,7 @@ impl EmlDocument {
             self.tags.push(tag.to_string());
             self.custom_headers
                 .insert("X-Tags".to_string(), self.tags.join(", "));
-            self.modified = Utc::now();
+            self.modified = Timestamp::now();
         }
     }
 
@@ -762,14 +762,14 @@ impl EmlDocument {
             self.custom_headers
                 .insert("X-Thread-ID".to_string(), tid.to_string());
         }
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_in_reply_to(&mut self, message_id: &str) {
         self.in_reply_to = Some(message_id.to_string());
         self.custom_headers
             .insert("In-Reply-To".to_string(), message_id.to_string());
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn add_reference(&mut self, message_id: &str) {
@@ -777,7 +777,7 @@ impl EmlDocument {
             self.references.push(message_id.to_string());
             self.custom_headers
                 .insert("References".to_string(), self.references.join(" "));
-            self.modified = Utc::now();
+            self.modified = Timestamp::now();
         }
     }
 
@@ -797,7 +797,7 @@ impl EmlDocument {
         };
 
         self.tracking_info = Some(tracking);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn add_analytics_tag(&mut self, key: &str, value: &str) {
@@ -813,7 +813,7 @@ impl EmlDocument {
                     .insert(key.to_string(), value.to_string());
             }
         }
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     // Analysis and statistics methods
@@ -860,7 +860,7 @@ impl EmlDocument {
         text.push_str(&format!("Subject: {}\n", self.headers.subject));
         text.push_str(&format!(
             "Date: {}\n",
-            self.headers.date.format("%Y-%m-%d %H:%M:%S UTC")
+            self.headers.date.strftime("%Y-%m-%d %H:%M:%S UTC")
         ));
 
         if !self.headers.to.is_empty() {
@@ -1180,9 +1180,13 @@ impl OfficeDocument for EmlDocument {
         }
 
         if let Some(date) = message.date() {
-            // Convert mail-parser DateTime to chrono DateTime
+            // Convert the supplied mail date without fabricating a different instant
             let timestamp = date.to_timestamp();
-            let utc_date = DateTime::from_timestamp(timestamp, 0).unwrap_or_else(|| Utc::now());
+            let utc_date = Timestamp::from_second(timestamp).map_err(|_| {
+                OfficeError::InvalidFormat(
+                    "Email Date exceeds the supported timestamp range".to_owned(),
+                )
+            })?;
             eml_doc.headers.date = utc_date;
             eml_doc.created = utc_date;
         }
@@ -1210,7 +1214,7 @@ impl OfficeDocument for EmlDocument {
             }
         }
 
-        eml_doc.modified = Utc::now();
+        eml_doc.modified = Timestamp::now();
         Ok(eml_doc)
     }
 
@@ -1269,7 +1273,7 @@ impl EmlDocument {
         headers.push_str(&format!("Subject: {}\r\n", self.headers.subject));
         headers.push_str(&format!(
             "Date: {}\r\n",
-            self.headers.date.format("%a, %d %b %Y %H:%M:%S %z")
+            self.headers.date.strftime("%a, %d %b %Y %H:%M:%S %z")
         ));
         headers.push_str(&format!("Message-ID: {}\r\n", self.message_id));
         headers.push_str(&format!("MIME-Version: {}\r\n", self.headers.mime_version));

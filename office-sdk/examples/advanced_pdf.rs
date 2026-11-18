@@ -806,11 +806,11 @@ Runway: 24+ months
     println!("   • Document author: {}", stats.author);
     println!(
         "   • Created: {}",
-        stats.created.format("%Y-%m-%d %H:%M:%S UTC")
+        stats.created.strftime("%Y-%m-%d %H:%M:%S UTC")
     );
     println!(
         "   • Last modified: {}",
-        stats.modified.format("%Y-%m-%d %H:%M:%S UTC")
+        stats.modified.strftime("%Y-%m-%d %H:%M:%S UTC")
     );
 
     // Step 11: Demonstrate round-trip capabilities

@@ -121,7 +121,7 @@ fn create_mock_docx(title: &str, author: &str, content: &str) -> String {
         this would be a properly formatted Microsoft Word document with XML structure.]",
         title,
         author,
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        jiff::Timestamp::now().strftime("%Y-%m-%d %H:%M:%S"),
         content
     )
 }
@@ -140,7 +140,7 @@ fn create_mock_pdf(title: &str, author: &str, content: &str) -> String {
         this would be a properly formatted PDF with binary structure and text layout.]",
         title,
         author,
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        jiff::Timestamp::now().strftime("%Y-%m-%d %H:%M:%S"),
         content
     )
 }
@@ -155,7 +155,7 @@ fn create_mock_xlsx(title: &str, content: &str) -> String {
         Worksheet: Sheet1\n\
         -----------------\n",
         title,
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
+        jiff::Timestamp::now().strftime("%Y-%m-%d %H:%M:%S")
     );
 
     for (i, row) in rows.iter().enumerate() {
@@ -185,7 +185,7 @@ fn create_mock_pptx(title: &str, author: &str, content: &str) -> String {
         Created: {}\n\n",
         title,
         author,
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
+        jiff::Timestamp::now().strftime("%Y-%m-%d %H:%M:%S")
     );
 
     pptx_content.push_str("Slide 1: Title Slide\n");
@@ -230,7 +230,7 @@ fn create_mock_eml(title: &str, author: &str, content: &str) -> String {
         this would be a properly formatted email message with RFC 822 headers and MIME structure.]",
         author,
         title,
-        chrono::Utc::now().format("%a, %d %b %Y %H:%M:%S +0000"),
+        jiff::Timestamp::now().strftime("%a, %d %b %Y %H:%M:%S +0000"),
         content
     )
 }

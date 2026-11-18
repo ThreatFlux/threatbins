@@ -45,3 +45,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<()>(), 0); // Simple assertion to make test valid
     }
 }
+
+/// Maintained UTC timestamp for document and storage metadata.
+#[cfg(feature = "report")]
+pub use jiff::Timestamp;

@@ -26,8 +26,12 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-office-sdk = { git = "https://github.com/ThreatFlux/threatbins", tag = "office-sdk-v0.3.1" }
+office-sdk = { git = "https://github.com/ThreatFlux/threatbins", tag = "office-sdk-v0.4.0" }
 ```
+
+Version 0.4 changes public document and storage dates to the maintained
+`office_sdk::Timestamp` type. See the [timestamp migration guide](docs/maintained-time.md)
+before updating consumers from 0.3.
 
 The repository publishes immutable GitHub releases after the matching `main`
 commit passes Rust CI, including the report interoperability checks. Each
