@@ -122,7 +122,7 @@ impl DocxBuilder {
 
         doc.add_paragraph(&format!(
             "Generated on: {}",
-            metadata.created.format("%Y-%m-%d %H:%M:%S UTC")
+            metadata.created.strftime("%Y-%m-%d %H:%M:%S UTC")
         ))?;
         doc.add_paragraph("")?;
 
@@ -154,7 +154,7 @@ impl DocxBuilder {
     fn create_letter_document(&self, content: &str, metadata: FileMetadata) -> Result<FileResult> {
         let mut doc = DocxDocument::new();
 
-        doc.add_paragraph(&format!("Date: {}", metadata.created.format("%B %d, %Y")))?;
+        doc.add_paragraph(&format!("Date: {}", metadata.created.strftime("%B %d, %Y")))?;
         doc.add_paragraph("")?;
 
         for line in content.lines() {

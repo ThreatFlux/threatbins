@@ -252,7 +252,7 @@ Mobile: (555) 987-6543
     );
     println!(
         "   • Date Sent: {}",
-        stats.date_sent.format("%Y-%m-%d %H:%M:%S UTC")
+        stats.date_sent.strftime("%Y-%m-%d %H:%M:%S UTC")
     );
 
     // Step 9: Validate email structure

@@ -1,5 +1,5 @@
+use crate::Timestamp;
 use crate::error::{OfficeError, Result};
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -92,15 +92,15 @@ pub struct FileMetadata {
     pub subject: Option<String>,
     pub description: Option<String>,
     pub keywords: Vec<String>,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
+    pub created: Timestamp,
+    pub modified: Timestamp,
     pub last_modified_by: Option<String>,
     pub properties: HashMap<String, String>,
 }
 
 impl Default for FileMetadata {
     fn default() -> Self {
-        let now = Utc::now();
+        let now = Timestamp::now();
         Self {
             title: None,
             author: None,

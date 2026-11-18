@@ -56,8 +56,8 @@ impl ContentExtractor {
                     "image_count": stats.image_count,
                     "table_count": stats.table_count,
                     "has_vba": stats.has_vba,
-                    "created": stats.created.to_rfc3339(),
-                    "modified": stats.modified.to_rfc3339(),
+                    "created": stats.created.display_with_offset(jiff::tz::Offset::UTC).to_string(),
+                    "modified": stats.modified.display_with_offset(jiff::tz::Offset::UTC).to_string(),
                     "author": stats.author
                 });
                 Ok(serde_json::to_string_pretty(&metadata)?)
@@ -115,8 +115,8 @@ impl ContentExtractor {
                     "worksheet_count": doc.worksheets.len(),
                     "author": doc.author,
                     "title": doc.title,
-                    "created": doc.created.to_rfc3339(),
-                    "modified": doc.modified.to_rfc3339()
+                    "created": doc.created.display_with_offset(jiff::tz::Offset::UTC).to_string(),
+                    "modified": doc.modified.display_with_offset(jiff::tz::Offset::UTC).to_string()
                 });
                 Ok(serde_json::to_string_pretty(&metadata)?)
             },
@@ -177,8 +177,8 @@ impl ContentExtractor {
                     "animation_count": stats.animation_count,
                     "has_vba": stats.has_vba,
                     "author": stats.author,
-                    "created": stats.created.to_rfc3339(),
-                    "modified": stats.modified.to_rfc3339()
+                    "created": stats.created.display_with_offset(jiff::tz::Offset::UTC).to_string(),
+                    "modified": stats.modified.display_with_offset(jiff::tz::Offset::UTC).to_string()
                 });
                 Ok(serde_json::to_string_pretty(&metadata)?)
             },
@@ -229,8 +229,8 @@ impl ContentExtractor {
                     "pdf_version": format!("{:?}", stats.pdf_version),
                     "author": doc.author,
                     "title": doc.title,
-                    "created": stats.created.to_rfc3339(),
-                    "modified": stats.modified.to_rfc3339()
+                    "created": stats.created.display_with_offset(jiff::tz::Offset::UTC).to_string(),
+                    "modified": stats.modified.display_with_offset(jiff::tz::Offset::UTC).to_string()
                 });
                 Ok(serde_json::to_string_pretty(&metadata)?)
             },
@@ -322,7 +322,7 @@ impl DocumentAnalyzer {
         data.add_metric("table_count", stats.table_count as f64);
         data.add_property("has_vba", stats.has_vba.to_string());
         data.add_property("author", stats.author);
-        data.add_property("created", stats.created.to_rfc3339());
+        data.add_property("created", stats.created.display_with_offset(jiff::tz::Offset::UTC).to_string());
 
         if let Ok(text) = doc.get_text() {
             data.add_metric("character_count", text.len() as f64);
@@ -600,7 +600,7 @@ impl AnalysisData {
             document_type: doc_type,
             metrics: HashMap::new(),
             properties: HashMap::new(),
-            analysis_timestamp: chrono::Utc::now().to_rfc3339(),
+            analysis_timestamp: jiff::Timestamp::now().display_with_offset(jiff::tz::Offset::UTC).to_string(),
         }
     }
 

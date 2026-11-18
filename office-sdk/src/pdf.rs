@@ -1,8 +1,8 @@
 use crate::OfficeDocument;
+use crate::Timestamp;
 use crate::error::{OfficeError, Result};
 use ::image::ImageReader;
 use ::lopdf::Document as LoDocument;
-use chrono::{DateTime, Utc};
 use printpdf::*;
 use std::collections::HashMap;
 use std::fs;
@@ -28,8 +28,8 @@ pub struct PdfDocument {
     pub keywords: String,
     pub description: String,
     pub category: String,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
+    pub created: Timestamp,
+    pub modified: Timestamp,
     pub last_modified_by: String,
     pub revision: u32,
 
@@ -357,8 +357,8 @@ pub struct Annotation {
     pub rect: Rectangle,
     pub content: String,
     pub author: String,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
+    pub created: Timestamp,
+    pub modified: Timestamp,
     pub color: Option<Color>,
     pub flags: AnnotationFlags,
     pub border: Option<AnnotationBorder>,
@@ -633,8 +633,8 @@ pub struct AttachmentInfo {
     pub data: Vec<u8>,
     pub mime_type: String,
     pub description: String,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
+    pub created: Timestamp,
+    pub modified: Timestamp,
     pub checksum: Option<String>,
     pub compressed: bool,
 }
@@ -803,8 +803,8 @@ pub struct DocumentStats {
     pub pdf_version: PdfVersion,
     pub file_size: usize,
     pub author: String,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
+    pub created: Timestamp,
+    pub modified: Timestamp,
     pub is_linearized: bool,
     pub is_tagged: bool,
 }
@@ -1046,7 +1046,7 @@ impl Rectangle {
 
 impl PdfDocument {
     pub fn new() -> Self {
-        let now = Utc::now();
+        let now = Timestamp::now();
         PdfDocument {
             pages: Vec::new(),
             fonts: HashMap::new(),
@@ -1088,55 +1088,55 @@ impl PdfDocument {
     // Enhanced metadata methods (matching DOCX/XLSX/PPTX)
     pub fn set_author(&mut self, author: &str) {
         self.author = author.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         self.revision += 1;
     }
 
     pub fn set_title(&mut self, title: &str) {
         self.title = title.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         self.revision += 1;
     }
 
     pub fn set_subject(&mut self, subject: &str) {
         self.subject = subject.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_keywords(&mut self, keywords: &str) {
         self.keywords = keywords.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_description(&mut self, description: &str) {
         self.description = description.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_category(&mut self, category: &str) {
         self.category = category.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     // PDF-specific configuration methods
     pub fn set_pdf_version(&mut self, version: PdfVersion) {
         self.pdf_version = version;
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_page_layout(&mut self, layout: PageLayout) {
         self.page_layout = layout;
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_page_mode(&mut self, mode: PageMode) {
         self.page_mode = mode;
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_viewer_preferences(&mut self, preferences: ViewerPreferences) {
         self.viewer_preferences = preferences;
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     // Page management methods
@@ -1158,7 +1158,7 @@ impl PdfDocument {
         };
 
         self.pages.push(page);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(page_id)
     }
 
@@ -1233,7 +1233,7 @@ impl PdfDocument {
         };
 
         self.pages[page_index].content.push(content);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
@@ -1395,7 +1395,7 @@ impl PdfDocument {
         };
 
         self.images.insert(image_id.clone(), image_info);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(image_id)
     }
 
@@ -1429,7 +1429,7 @@ impl PdfDocument {
         };
 
         self.pages[page_index].content.push(content);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
@@ -1463,7 +1463,7 @@ impl PdfDocument {
         };
 
         self.pages[page_index].content.push(content);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
@@ -1495,7 +1495,7 @@ impl PdfDocument {
         };
 
         self.pages[page_index].content.push(content);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
@@ -1528,7 +1528,7 @@ impl PdfDocument {
         };
 
         self.pages[page_index].content.push(content);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
@@ -1623,7 +1623,7 @@ impl PdfDocument {
         };
 
         self.pages[page_index].content.push(content);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(table_id)
     }
 
@@ -1642,7 +1642,7 @@ impl PdfDocument {
         };
 
         self.fonts.insert(font_id.clone(), font_info);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(font_id)
     }
 
@@ -1660,7 +1660,7 @@ impl PdfDocument {
         };
 
         self.fonts.insert(font_id.clone(), font_info);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(font_id)
     }
 
@@ -1680,7 +1680,7 @@ impl PdfDocument {
         };
 
         self.bookmarks.push(bookmark);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(bookmark_id)
     }
 
@@ -1717,7 +1717,7 @@ impl PdfDocument {
         author: &str,
     ) -> Result<String> {
         let annotation_id = format!("annotation{}", self.annotations.len() + 1);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let annotation = Annotation {
             id: annotation_id.clone(),
@@ -1745,7 +1745,7 @@ impl PdfDocument {
             self.pages[page].annotations.push(annotation_id.clone());
         }
 
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(annotation_id)
     }
 
@@ -1759,7 +1759,7 @@ impl PdfDocument {
         author: &str,
     ) -> Result<String> {
         let annotation_id = format!("annotation{}", self.annotations.len() + 1);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let annotation = Annotation {
             id: annotation_id.clone(),
@@ -1782,7 +1782,7 @@ impl PdfDocument {
             self.pages[page].annotations.push(annotation_id.clone());
         }
 
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(annotation_id)
     }
 
@@ -1796,7 +1796,7 @@ impl PdfDocument {
         url: &str,
     ) -> Result<String> {
         let annotation_id = format!("annotation{}", self.annotations.len() + 1);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let annotation = Annotation {
             id: annotation_id.clone(),
@@ -1823,7 +1823,7 @@ impl PdfDocument {
             self.pages[page].annotations.push(annotation_id.clone());
         }
 
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(annotation_id)
     }
 
@@ -1860,7 +1860,7 @@ impl PdfDocument {
         };
 
         self.forms.insert(field_id.clone(), form_field);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(field_id)
     }
 
@@ -1896,7 +1896,7 @@ impl PdfDocument {
         };
 
         self.forms.insert(field_id.clone(), form_field);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(field_id)
     }
 
@@ -1929,7 +1929,7 @@ impl PdfDocument {
         };
 
         self.forms.insert(field_id.clone(), form_field);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(field_id)
     }
 
@@ -1980,7 +1980,7 @@ impl PdfDocument {
         };
 
         self.forms.insert(field_id.clone(), form_field);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(field_id)
     }
 
@@ -1994,24 +1994,24 @@ impl PdfDocument {
             user_password.is_some() || owner_password.is_some();
         self.security_settings.user_password = user_password.map(|s| s.to_string());
         self.security_settings.owner_password = owner_password.map(|s| s.to_string());
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_permissions(&mut self, permissions: PermissionFlags) {
         self.security_settings.permissions = permissions;
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_encryption_level(&mut self, level: EncryptionLevel) {
         self.security_settings.encryption_level = level;
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     // JavaScript methods (PDF automation)
     pub fn add_javascript(&mut self, name: &str, script: &str) -> Result<String> {
         let script_id = format!("js{}", self.javascript.len() + 1);
         self.javascript.insert(name.to_string(), script.to_string());
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(script_id)
     }
 
@@ -2029,7 +2029,7 @@ impl PdfDocument {
         description: &str,
     ) -> Result<String> {
         let attachment_id = format!("attachment{}", self.attachments.len() + 1);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Calculate checksum
         let checksum = format!("{:x}", md5::compute(&data));
@@ -2047,7 +2047,7 @@ impl PdfDocument {
         };
 
         self.attachments.insert(attachment_id.clone(), attachment);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(attachment_id)
     }
 
@@ -2066,7 +2066,7 @@ impl PdfDocument {
         };
 
         self.layers.insert(layer_id.clone(), layer);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(layer_id)
     }
 
@@ -2087,7 +2087,7 @@ impl PdfDocument {
         };
 
         self.outline.push(outline_item);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(outline_id)
     }
 
@@ -2208,7 +2208,7 @@ impl PdfDocument {
             }
         }
 
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
@@ -2307,7 +2307,7 @@ impl PdfDocument {
                 )
         });
 
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 }
@@ -2446,7 +2446,7 @@ impl OfficeDocument for PdfDocument {
         }
 
         // Set modification time
-        pdf_doc.modified = Utc::now();
+        pdf_doc.modified = Timestamp::now();
 
         Ok(pdf_doc)
     }

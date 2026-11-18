@@ -1,6 +1,6 @@
 [package]
 name = "office-sdk"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.98.0"
 authors = ["ThreatFlux Team"]
@@ -14,7 +14,7 @@ categories = ["parser-implementations", "encoding"]
 [features]
 default = ["full"]
 report-model = ["dep:sha2"]
-report = ["report-model", "dep:base64", "dep:printpdf", "dep:lopdf", "dep:zip", "dep:quick-xml", "dep:chrono", "dep:image"]
+report = ["report-model", "dep:base64", "dep:printpdf", "dep:lopdf", "dep:zip", "dep:quick-xml", "dep:jiff", "dep:image"]
 full = ["report", "image/default", "dep:serde-xml-rs", "dep:anyhow", "dep:pulldown-cmark", "dep:regex", "dep:pdf-writer", "dep:md5", "dep:clap", "dep:walkdir", "dep:indicatif", "dep:console", "dep:dialoguer", "dep:colored", "dep:dirs", "dep:lettre", "dep:mail-parser", "dep:mime", "dep:time", "dep:tokio", "dep:warp", "dep:bytes", "dep:futures-util", "dep:uuid"]
 
 [dependencies]
@@ -27,7 +27,7 @@ anyhow = { version = "1.0.104", optional = true }
 pulldown-cmark = { version = "0.13.6", optional = true }
 regex = { version = "1.13.1", optional = true }
 base64 = { version = "0.23.1", optional = true }
-chrono = { version = "0.4.45", features = ["serde"], optional = true }
+jiff = { version = "1.0.1", default-features = false, features = ["std", "serde"], optional = true }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"], optional = true }
 uuid = { version = "1.29.2", features = ["v4"] , optional = true }
 printpdf = { version = "0.12.9", default-features = false , optional = true }
@@ -42,7 +42,7 @@ console = { version = "0.16.6", optional = true }
 dialoguer = { version = "0.12.0", optional = true }
 colored = { version = "3.1.1", optional = true }
 dirs = { version = "7.0.0", optional = true }
-lettre = { version = "0.11.23", optional = true }
+lettre = { version = "0.11.24", optional = true }
 mail-parser = { version = "1.0.1", optional = true }
 mime = { version = "0.3.18", optional = true }
 time = { version = "0.3.55", optional = true }
@@ -92,3 +92,7 @@ required-features = ["report"]
 [[test]]
 name = "report_model"
 required-features = ["report-model"]
+
+[[test]]
+name = "maintained_time"
+required-features = ["report"]

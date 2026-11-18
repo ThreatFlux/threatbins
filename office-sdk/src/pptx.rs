@@ -1,10 +1,10 @@
 use crate::OfficeDocument;
+use crate::Timestamp;
 use crate::error::{OfficeError, Result};
 use crate::utils::{
     decode_xml_reference, decode_xml_text, read_zip_entry, read_zip_entry_bytes,
     validate_office_format,
 };
-use chrono::{DateTime, Utc};
 use image::ImageReader;
 use quick_xml::{Reader, events::Event};
 use std::collections::HashMap;
@@ -31,8 +31,8 @@ pub struct PptxDocument {
     pub keywords: String,
     pub description: String,
     pub category: String,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
+    pub created: Timestamp,
+    pub modified: Timestamp,
     pub last_modified_by: String,
     pub revision: u32,
     pub slide_size: SlideSize,
@@ -120,7 +120,7 @@ impl Default for PptxDocument {
 
 impl PptxDocument {
     pub fn new() -> Self {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let mut doc = PptxDocument {
             presentation: Self::default_presentation_xml(),
             slides: HashMap::new(),
@@ -166,7 +166,7 @@ impl PptxDocument {
 
         // Update presentation.xml to include the new slide
         self.update_presentation_xml();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
 
         Ok(slide_id)
     }
@@ -174,39 +174,39 @@ impl PptxDocument {
     // Enhanced metadata methods
     pub fn set_author(&mut self, author: &str) {
         self.author = author.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_title(&mut self, title: &str) {
         self.title = title.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_subject(&mut self, subject: &str) {
         self.subject = subject.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_keywords(&mut self, keywords: &str) {
         self.keywords = keywords.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_description(&mut self, description: &str) {
         self.description = description.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn set_category(&mut self, category: &str) {
         self.category = category.to_string();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     // Slide size and layout methods
     pub fn set_slide_size(&mut self, slide_size: SlideSize) {
         self.slide_size = slide_size;
         self.update_presentation_xml();
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
     }
 
     pub fn get_slide_size(&self) -> SlideSize {
@@ -260,7 +260,7 @@ impl PptxDocument {
         };
 
         self.images.insert(image_id.clone(), image_info);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(image_id)
     }
 
@@ -283,14 +283,14 @@ impl PptxDocument {
         };
 
         self.animations.insert(animation_id.clone(), animation);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(animation_id)
     }
 
     // Speaker notes methods
     pub fn add_slide_notes(&mut self, slide_id: &str, notes: &str) -> Result<()> {
         self.notes.insert(slide_id.to_string(), notes.to_string());
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
@@ -301,7 +301,7 @@ impl PptxDocument {
     // VBA methods
     pub fn add_vba_macro(&mut self, vba_data: Vec<u8>) -> Result<()> {
         self.vba_project = Some(vba_data);
-        self.modified = Utc::now();
+        self.modified = Timestamp::now();
         Ok(())
     }
 
@@ -966,7 +966,7 @@ impl OfficeDocument for PptxDocument {
         }
 
         // Parse metadata from core properties if available
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (
             author,
             title,
@@ -979,20 +979,7 @@ impl OfficeDocument for PptxDocument {
             last_modified_by,
             revision,
         ) = if let Some(ref core_xml) = core_properties {
-            Self::parse_core_properties(core_xml).unwrap_or_else(|_| {
-                (
-                    "Office SDK".to_string(),
-                    "New Presentation".to_string(),
-                    "".to_string(),
-                    "".to_string(),
-                    "".to_string(),
-                    "".to_string(),
-                    now,
-                    now,
-                    "Office SDK".to_string(),
-                    1,
-                )
-            })
+            Self::parse_core_properties(core_xml)?
         } else {
             (
                 "Office SDK".to_string(),
@@ -1355,8 +1342,12 @@ impl PptxDocument {
             escape(&self.category),
             escape(&self.last_modified_by),
             self.revision,
-            self.created.to_rfc3339(),
-            self.modified.to_rfc3339()
+            self.created
+                .display_with_offset(jiff::tz::Offset::UTC)
+                .to_string(),
+            self.modified
+                .display_with_offset(jiff::tz::Offset::UTC)
+                .to_string()
         )
     }
 
@@ -1369,8 +1360,8 @@ impl PptxDocument {
         String,
         String,
         String,
-        DateTime<Utc>,
-        DateTime<Utc>,
+        Timestamp,
+        Timestamp,
         String,
         u32,
     )> {
@@ -1386,8 +1377,8 @@ impl PptxDocument {
         let mut description = "".to_string();
         let mut keywords = "".to_string();
         let mut category = "".to_string();
-        let mut created = Utc::now();
-        let mut modified = Utc::now();
+        let mut created = Timestamp::now();
+        let mut modified = Timestamp::now();
         let mut last_modified_by = "Office SDK".to_string();
         let mut revision = 1;
 
@@ -1414,14 +1405,18 @@ impl PptxDocument {
                         "category" => category = text,
                         "lastModifiedBy" => last_modified_by = text,
                         "created" => {
-                            if let Ok(dt) = DateTime::parse_from_rfc3339(&text) {
-                                created = dt.with_timezone(&Utc);
-                            }
+                            created = text.parse::<Timestamp>().map_err(|_| {
+                                OfficeError::InvalidFormat(
+                                    "Unsupported presentation creation timestamp".to_owned(),
+                                )
+                            })?;
                         }
                         "modified" => {
-                            if let Ok(dt) = DateTime::parse_from_rfc3339(&text) {
-                                modified = dt.with_timezone(&Utc);
-                            }
+                            modified = text.parse::<Timestamp>().map_err(|_| {
+                                OfficeError::InvalidFormat(
+                                    "Unsupported presentation modification timestamp".to_owned(),
+                                )
+                            })?;
                         }
                         "revision" => {
                             if let Ok(rev) = text.parse::<u32>() {
@@ -1541,6 +1536,6 @@ pub struct DocumentStats {
     pub total_text_length: usize,
     pub has_vba: bool,
     pub author: String,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
+    pub created: Timestamp,
+    pub modified: Timestamp,
 }

@@ -1,7 +1,7 @@
 use crate::OfficeDocument;
+use crate::Timestamp;
 use crate::error::{OfficeError, Result};
 use crate::utils::{decode_xml_reference, decode_xml_text, read_zip_entry, validate_office_format};
-use chrono::{DateTime, Utc};
 use quick_xml::{Reader, events::Event};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -37,8 +37,8 @@ pub struct DocumentMetadata {
     pub description: Option<String>,
     pub keywords: Option<String>,
     pub category: Option<String>,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
+    pub created: Timestamp,
+    pub modified: Timestamp,
     pub last_modified_by: Option<String>,
     pub revision: Option<String>,
     pub version: Option<String>,
@@ -113,7 +113,7 @@ pub enum TextAlign {
 
 impl Default for DocumentMetadata {
     fn default() -> Self {
-        let now = Utc::now();
+        let now = Timestamp::now();
         DocumentMetadata {
             title: None,
             author: Some("Office SDK User".to_string()),
@@ -177,7 +177,7 @@ impl Default for DocxDocument {
 
 impl DocxDocument {
     pub fn new() -> Self {
-        let now = Utc::now();
+        let now = Timestamp::now();
         DocxDocument {
             content: Self::default_document_xml(),
             styles: Some(Self::comprehensive_styles_xml()),
@@ -670,7 +670,7 @@ impl DocxDocument {
     }
 
     pub fn update_metadata(&mut self) {
-        self.metadata.modified = Utc::now();
+        self.metadata.modified = Timestamp::now();
         if let Some(revision) = &self.metadata.revision
             && let Ok(rev_num) = revision.parse::<u32>()
         {
@@ -978,12 +978,12 @@ impl DocxDocument {
         let created_str = self
             .metadata
             .created
-            .format("%Y-%m-%dT%H:%M:%SZ")
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
             .to_string();
         let modified_str = self
             .metadata
             .modified
-            .format("%Y-%m-%dT%H:%M:%SZ")
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
             .to_string();
 
         format!(

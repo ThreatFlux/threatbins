@@ -521,7 +521,7 @@ fn handle_info(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             );
             println!(
                 "📅 Date: {}",
-                stats.date_sent.format("%Y-%m-%d %H:%M:%S UTC")
+                stats.date_sent.strftime("%Y-%m-%d %H:%M:%S UTC")
             );
             println!("⚡ Priority: {:?}", stats.priority);
         }

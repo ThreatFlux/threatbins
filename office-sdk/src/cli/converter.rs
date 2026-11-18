@@ -458,8 +458,8 @@ impl DocumentConverter {
                 "image_count": stats.image_count,
                 "table_count": stats.table_count,
                 "has_vba": stats.has_vba,
-                "created": stats.created.to_rfc3339(),
-                "modified": stats.modified.to_rfc3339()
+                "created": stats.created.display_with_offset(jiff::tz::Offset::UTC).to_string(),
+                "modified": stats.modified.display_with_offset(jiff::tz::Offset::UTC).to_string()
             },
             "text_content": doc.get_text().unwrap_or_default()
         });

@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ))?;
     doc.add_bulleted_list_item(&format!(
         "Created: {}",
-        doc.metadata.created.format("%Y-%m-%d %H:%M:%S UTC")
+        doc.metadata.created.strftime("%Y-%m-%d %H:%M:%S UTC")
     ))?;
 
     doc.add_heading(2, "Page Setup Configuration")?;
@@ -404,12 +404,12 @@ doc.add_vba_macro(vba_data)?;
             ],
             vec![
                 "Created Date",
-                &doc.metadata.created.format("%Y-%m-%d").to_string(),
+                &doc.metadata.created.strftime("%Y-%m-%d").to_string(),
                 "DateTime",
             ],
             vec![
                 "Modified Date",
-                &doc.metadata.modified.format("%Y-%m-%d").to_string(),
+                &doc.metadata.modified.strftime("%Y-%m-%d").to_string(),
                 "DateTime",
             ],
         ],

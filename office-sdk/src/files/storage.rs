@@ -15,7 +15,7 @@ pub struct FileStorage {
 pub struct StoredFile {
     pub id: String,
     pub result: FileResult,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: crate::Timestamp,
     pub access_count: usize,
     pub tags: Vec<String>,
 }
@@ -60,7 +60,7 @@ impl FileStorage {
         let stored_file = StoredFile {
             id: id.clone(),
             result: file_result.clone(),
-            created_at: chrono::Utc::now(),
+            created_at: jiff::Timestamp::now(),
             access_count: 0,
             tags,
         };
@@ -285,7 +285,7 @@ pub struct FileInfo {
     pub filename: String,
     pub format: DocumentFormat,
     pub size: usize,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: crate::Timestamp,
     pub access_count: usize,
     pub tags: Vec<String>,
 }
@@ -296,8 +296,8 @@ pub struct StorageStats {
     pub current_size: usize,
     pub max_size: usize,
     pub files_by_format: HashMap<DocumentFormat, usize>,
-    pub oldest_file: Option<chrono::DateTime<chrono::Utc>>,
-    pub newest_file: Option<chrono::DateTime<chrono::Utc>>,
+    pub oldest_file: Option<crate::Timestamp>,
+    pub newest_file: Option<crate::Timestamp>,
 }
 
 #[cfg(test)]
