@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "document_id": "sample-period-review",
+  "revision": "edition-3",
+  "report_type": "period_review",
+  "title": "Distribution Operations Review",
+  "subtitle": "Synthetic reporting fixture",
+  "period": "April to June 2026",
+  "scope": "Materials receiving and distribution",
+  "comparison": "Previous period, equivalent scope",
+  "provenance": {
+    "evidence_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "sources": [
+      {
+        "id": "inventory-snapshot",
+        "revision": "rev-12"
+      },
+      {
+        "id": "observation-log",
+        "revision": "rev-4"
+      }
+    ]
+  },
+  "definitions": [
+    {
+      "term": "Measured coverage",
+      "meaning": "Share of scheduled observations with a recorded result."
+    },
+    {
+      "term": "Gap",
+      "meaning": "A scheduled observation with no recorded measurement."
+    }
+  ],
+  "limitations": [
+    "One measurement is missing in the distribution trend."
+  ],
+  "sections": [
+    {
+      "id": "bottom-line",
+      "title": "Bottom line",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Measured coverage reached 78 percent. The receiving workstream has the largest remaining gap."
+        },
+        {
+          "type": "paragraph",
+          "text": "Prioritize the outstanding sampling work during the next period."
+        },
+        {
+          "type": "links",
+          "links": [
+            {
+              "label": "Review the receiving action",
+              "target_id": "receiving-action"
+            },
+            {
+              "label": "See the measured groups",
+              "target_id": "measured-groups"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "measured-groups",
+      "title": "Measured groups",
+      "blocks": [
+        {
+          "type": "anchored_table",
+          "table": {
+            "caption": "Recorded coverage by group",
+            "headers": [
+              "Group",
+              "Coverage",
+              "Target",
+              "Record"
+            ],
+            "rows": [
+              [
+                "Northern dispatch",
+                "60",
+                "80",
+                "Measured"
+              ],
+              [
+                "Materials receiving",
+                "63",
+                "80",
+                "Measured"
+              ],
+              [
+                "Inventory staging",
+                "66",
+                "80",
+                "Measured"
+              ],
+              [
+                "Evening dispatch",
+                "Not measured",
+                "80",
+                "Missing"
+              ],
+              [
+                "Returns and inspection",
+                "72",
+                "80",
+                "Measured"
+              ],
+              [
+                "Pallet handling",
+                "75",
+                "80",
+                "Measured"
+              ],
+              [
+                "Southern distribution",
+                "78",
+                "80",
+                "Measured"
+              ],
+              [
+                "Quality verification",
+                "81",
+                "80",
+                "Measured"
+              ],
+              [
+                "Inventory reconciliation",
+                "84",
+                "80",
+                "Measured"
+              ],
+              [
+                "Outbound parcel staging",
+                "87",
+                "80",
+                "Measured"
+              ],
+              [
+                "Packaging allocation",
+                "90",
+                "80",
+                "Measured"
+              ],
+              [
+                "Packing review",
+                "93",
+                "80",
+                "Measured"
+              ]
+            ]
+          },
+          "row_ids": [
+            "group-1",
+            "group-2",
+            "group-3",
+            "group-4",
+            "group-5",
+            "group-6",
+            "group-7",
+            "group-8",
+            "group-9",
+            "group-10",
+            "group-11",
+            "group-12"
+          ]
+        },
+        {
+          "type": "chart",
+          "chart": {
+            "title": "Distribution trend",
+            "description": "Scheduled measurements and the recorded reference line.",
+            "labels": [
+              "Opening observation in the northern distribution and staging corridor",
+              "Follow-up observation in the staging corridor",
+              "Observation from the quality verification workstream",
+              "Closing observation in the southern receiving and distribution corridor"
+            ],
+            "series": [
+              {
+                "name": "Measured coverage",
+                "values": [
+                  64,
+                  null,
+                  72,
+                  78
+                ]
+              },
+              {
+                "name": "Comparable coverage",
+                "values": [
+                  62,
+                  63,
+                  65,
+                  66
+                ]
+              }
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "target": 80,
+            "bands": [
+              {
+                "label": "Reference range",
+                "start": 50
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "paired-trends",
+      "title": "Two observation series",
+      "blocks": [
+        {
+          "type": "chart",
+          "chart": {
+            "title": "Receiving",
+            "description": "Recorded point values by checkpoint.",
+            "labels": [
+              "April",
+              "May",
+              "June"
+            ],
+            "series": [
+              {
+                "name": "Coverage",
+                "values": [
+                  60,
+                  64,
+                  72
+                ]
+              }
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "target": null,
+            "bands": [
+              {
+                "label": "Reference range",
+                "start": 50
+              }
+            ]
+          }
+        },
+        {
+          "type": "chart",
+          "chart": {
+            "title": "Dispatch",
+            "description": "Recorded point values by checkpoint.",
+            "labels": [
+              "April",
+              "May",
+              "June"
+            ],
+            "series": [
+              {
+                "name": "Coverage",
+                "values": [
+                  64,
+                  70,
+                  78
+                ]
+              }
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "target": null,
+            "bands": [
+              {
+                "label": "Reference range",
+                "start": 50
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "actions",
+      "title": "Follow-up actions",
+      "blocks": [
+        {
+          "type": "anchored_table",
+          "table": {
+            "caption": "Recorded follow-up",
+            "headers": [
+              "Action",
+              "Owner"
+            ],
+            "rows": [
+              [
+                "Restore receiving observations",
+                "Distribution team"
+              ],
+              [
+                "Review the retention schedule",
+                "Inventory team"
+              ]
+            ]
+          },
+          "row_ids": [
+            "receiving-action",
+            "retention-action"
+          ]
+        },
+        {
+          "type": "links",
+          "links": [
+            {
+              "label": "Return to the bottom line",
+              "target_id": "bottom-line"
+            },
+            {
+              "label": "See the source receiving row",
+              "target_id": "group-2"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

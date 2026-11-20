@@ -5,10 +5,18 @@ use printpdf::{
     PdfSaveOptions, Point, Polygon, PolygonRing, Pt, Rgb, TextItem, WindingOrder,
 };
 
-pub(crate) fn render(d: &ReportDocument, pages: &[Page], font: &[u8]) -> ReportResult<Vec<u8>> {
+pub(crate) fn render(
+    d: &ReportDocument,
+    pages: &[Page],
+    font: &[u8],
+    binding: Option<&str>,
+) -> ReportResult<Vec<u8>> {
     let parsed = ParsedFont::from_bytes(font, 0, &mut Vec::new())
         .ok_or_else(|| invalid("font_data", "font cannot be embedded in PDF"))?;
     let mut pdf = PdfDocument::new(&d.title);
+    if let Some(binding) = binding {
+        pdf.metadata.info.subject = binding.into();
+    }
     let handle = PdfFontHandle::External(pdf.add_font(&parsed));
     let metrics = FontMetrics::new(font)?;
     let mut result = Vec::new();
@@ -123,29 +131,36 @@ pub(crate) fn render(d: &ReportDocument, pages: &[Page], font: &[u8]) -> ReportR
             }
             PageBody::Chart(c) => chart(&mut ops, &handle, c, &metrics)?,
         }
-        let footer = format!(
-            "{} / {}  ·  {}  ·  revision {}",
-            i + 1,
-            pages.len(),
-            d.document_id,
-            d.revision
-        );
-        // The complete IDs are also in the provenance pages. Reject enormous
-        // footer fields rather than silently truncate their visible binding.
-        let footer_lines = metrics.wrap(&footer, 8.0, BODY_WIDTH)?;
-        if footer_lines.len() > 3 {
-            return Err(invalid(
-                "document_id/revision",
-                "page footer must fit within three lines",
-            ));
-        }
+        let page_number = format!("{} / {}", i + 1, pages.len());
+        let (footer_lines, baseline) = if binding.is_some() {
+            if i == 0 {
+                // Reserve the first footer for context. The complete document and
+                // revision are in the provenance pages and embedded binding.
+                (opening_context(d, &metrics)?, 499.0)
+            } else {
+                (vec![page_number], 505.0)
+            }
+        } else {
+            let footer = format!(
+                "{page_number}  ·  {}  ·  revision {}",
+                d.document_id, d.revision
+            );
+            let lines = metrics.wrap(&footer, 8.0, BODY_WIDTH)?;
+            if lines.len() > 3 {
+                return Err(invalid(
+                    "document_id/revision",
+                    "page footer must fit within three lines",
+                ));
+            }
+            (lines, 505.0)
+        };
         for (n, l) in footer_lines.iter().enumerate() {
             text(
                 &mut ops,
                 &handle,
                 l,
                 LEFT,
-                505.0 + n as f64 * 10.0,
+                baseline + n as f64 * 10.0,
                 8.0,
                 "525252",
             );
@@ -165,6 +180,52 @@ pub(crate) fn render(d: &ReportDocument, pages: &[Page], font: &[u8]) -> ReportR
     }
     Ok(bytes)
 }
+fn opening_context(document: &ReportDocument, metrics: &FontMetrics) -> ReportResult<Vec<String>> {
+    const SIZE: f64 = 8.0;
+    let full = metrics.wrap(&period_comparison(document), SIZE, BODY_WIDTH)?;
+    if full.len() <= 4 {
+        return Ok(full);
+    }
+
+    let fields = [
+        ("Period", &document.period),
+        ("Comparison", &document.comparison),
+    ];
+    let [period, comparison] =
+        fields.map(|(label, value)| metrics.wrap(&format!("{label}: {value}"), SIZE, BODY_WIDTH));
+    let wrapped = [period?, comparison?];
+    if wrapped.iter().map(Vec::len).sum::<usize>() <= 4 {
+        return Ok(wrapped.into_iter().flatten().collect());
+    }
+
+    let mut lines = Vec::new();
+    for ((label, value), complete) in fields.into_iter().zip(wrapped) {
+        if complete.len() <= 2 {
+            lines.extend(complete);
+            continue;
+        }
+        let suffix = " ...";
+        let mut excerpt = format!("{label}: ");
+        let mut remaining =
+            BODY_WIDTH - metrics.width(&excerpt, SIZE)? - metrics.width(suffix, SIZE)?;
+        for character in value
+            .trim_start()
+            .chars()
+            .take_while(|c| !matches!(c, '\n' | '\r'))
+        {
+            let width = metrics.width(character.encode_utf8(&mut [0; 4]), SIZE)?;
+            if width > remaining {
+                break;
+            }
+            excerpt.push(if character == '\t' { ' ' } else { character });
+            remaining -= width;
+        }
+        lines.push(format!("{}{suffix}", excerpt.trim_end()));
+    }
+    lines.push(format!("Full values continue in {REPORT_CONTEXT_TITLE}."));
+    Ok(lines)
+}
+
 fn point(x: f64, y: f64) -> Point {
     Point {
         x: Pt(x as f32),

@@ -1,6 +1,6 @@
 [package]
 name = "office-sdk"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.98.0"
 authors = ["ThreatFlux Team"]
@@ -95,4 +95,8 @@ required-features = ["report-model"]
 
 [[test]]
 name = "maintained_time"
+required-features = ["report"]
+
+[[test]]
+name = "report_section_first"
 required-features = ["report"]

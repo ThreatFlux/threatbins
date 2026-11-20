@@ -1,4 +1,5 @@
 //! cargo run --example report_render -- tests/fixtures/executive-report.json output/reports
+//! The optional third argument selects a report template.
 use office_sdk::report::*;
 use std::{env, fs, path::PathBuf};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -7,11 +8,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .next()
         .unwrap_or_else(|| "tests/fixtures/executive-report.json".into());
     let out = PathBuf::from(args.next().unwrap_or_else(|| "output/reports".into()));
+    let template = args.next();
     let document: ReportDocument = serde_json::from_slice(&fs::read(fixture)?)?;
     fs::create_dir_all(&out)?;
     let digest = report_document_sha256(&document)?;
     for format in [ReportFormat::Pdf, ReportFormat::Html, ReportFormat::Pptx] {
         let mut options = ReportRenderOptions::new(format);
+        if let Some(template) = &template {
+            options.template.clone_from(template);
+        }
         options.expected_document_sha256 = Some(digest.clone());
         let result = render_report(&document, &options)?;
         fs::write(

@@ -64,6 +64,19 @@ jobs:
         run: |
           cargo +1.100.0 test --manifest-path office-sdk/Cargo.toml --lib --test maintained_time --no-default-features --features report --locked
           cargo +1.100.0 test --manifest-path office-sdk/Cargo.toml --lib --test report_model --no-default-features --features report-model --locked
+      - name: Check out the published 0.4.0 source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 34f14b4dcab38b8766559bcf6a409585d0721d8d
+          path: report-baseline
+          persist-credentials: false
+      - name: Generate prior-release fixtures and verify candidate inspection
+        env:
+          OFFICE_REPORT_BASELINE_DIR: ${{ runner.temp }}/office-report-0.4.0
+          CARGO_TARGET_DIR: ${{ github.workspace }}/office-sdk/target
+        run: |
+          cargo +1.100.0 run --manifest-path report-baseline/office-sdk/Cargo.toml --example report_render --no-default-features --features report --locked -- office-sdk/tests/fixtures/section-first-report.json "$OFFICE_REPORT_BASELINE_DIR"
+          cargo +1.100.0 test --manifest-path office-sdk/Cargo.toml --test report_section_first --no-default-features --features report --locked -- previous_release_artifacts_remain_readable --ignored --exact
       - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: 11.0.100
