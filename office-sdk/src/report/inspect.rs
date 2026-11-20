@@ -8,6 +8,15 @@ use std::{
 /// Verify returned bytes against an SDK manifest and inspect structural parts.
 /// This does not replace visual review or establish application approval.
 pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<ReportInspection> {
+    inspect_with_html_font(bytes, manifest, None)
+}
+
+// Rendering can check the embedded font in the same pass that reads the HTML.
+pub(super) fn inspect_with_html_font(
+    bytes: &[u8],
+    manifest: &ReportManifest,
+    html_font: Option<&layout::FontMetrics>,
+) -> ReportResult<ReportInspection> {
     if bytes.len() != manifest.byte_size || sha256(bytes) != manifest.output_sha256 {
         return Err(ReportError::DigestMismatch);
     }
@@ -60,7 +69,7 @@ pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<R
         }
         ReportFormat::Html => {
             let h = std::str::from_utf8(bytes).map_err(|_| invalid("html", "not UTF-8"))?;
-            inspect_html(h, &manifest.document_sha256, binding.as_deref())?;
+            inspect_html(h, &manifest.document_sha256, binding.as_deref(), html_font)?;
             result
                 .structural_checks
                 .push("UTF-8 offline HTML with document binding and no active content".into());
@@ -354,6 +363,7 @@ struct ShapeText {
     text_box: bool,
     notes_body: bool,
     paragraphs: Vec<String>,
+    preceding_table_rows: Option<usize>,
 }
 
 fn report_shape_text(data: &[u8], root: &str) -> ReportResult<Vec<ShapeText>> {
@@ -361,23 +371,66 @@ fn report_shape_text(data: &[u8], root: &str) -> ReportResult<Vec<ShapeText>> {
     let base = [root, "p:cSld", "p:spTree"];
     let mut shapes = Vec::new();
     let mut current = None;
+    let mut table_rows = None;
+    let mut table_graphic = false;
     walk_report_xml(data, |parents, event| {
-        if parents == base {
+        if parents
+            .get(..base.len())
+            .is_none_or(|prefix| prefix != base)
+        {
+            return Ok(());
+        }
+        let path = &parents[base.len()..];
+        if path.is_empty() {
+            // A preview caption is the next shape after its native table.
             match event {
                 Event::Start(e) if e.name().as_ref() == "p:sp" => {
-                    current = Some(ShapeText::default());
+                    current = Some(ShapeText {
+                        preceding_table_rows: table_rows.take(),
+                        ..Default::default()
+                    });
                 }
                 Event::End(e) if e.name().as_ref() == "p:sp" => {
                     shapes.extend(current.take());
+                }
+                Event::Start(_) | Event::Empty(_) => {
+                    table_rows = None;
+                    table_graphic = false;
                 }
                 _ => {}
             }
             return Ok(());
         }
         let Some(shape) = &mut current else {
+            if root == "p:sld"
+                && let Event::Start(element) | Event::Empty(element) = event
+            {
+                match element.name().as_ref() {
+                    "a:graphicData" if path == ["p:graphicFrame", "a:graphic"] => {
+                        table_graphic = node_attribute(&element, "uri")?.as_deref()
+                            == Some(pptx::TABLE_GRAPHIC_URI);
+                    }
+                    "a:tbl"
+                        if table_graphic
+                            && path == ["p:graphicFrame", "a:graphic", "a:graphicData"] =>
+                    {
+                        if table_rows.replace(0).is_some() {
+                            return Err(invalid("pptx", "multiple tables in one graphic frame"));
+                        }
+                    }
+                    "a:tr"
+                        if table_graphic
+                            && path
+                                == ["p:graphicFrame", "a:graphic", "a:graphicData", "a:tbl"]
+                            && let Some(rows) = &mut table_rows =>
+                    {
+                        *rows += 1;
+                    }
+                    _ => {}
+                }
+            }
             return Ok(());
         };
-        let path = &parents[base.len()..];
         let opens = matches!(&event, Event::Start(_));
         match event {
             Event::Start(element) | Event::Empty(element) => match element.name().as_ref() {
@@ -420,6 +473,14 @@ fn report_shape_text(data: &[u8], root: &str) -> ReportResult<Vec<ShapeText>> {
     Ok(shapes)
 }
 
+fn meaningful_heading(text: &str) -> bool {
+    text.chars().any(|c| {
+        !c.is_whitespace()
+            && !c.is_control()
+            && !matches!(c, '\u{200b}'..='\u{200f}' | '\u{2060}' | '\u{feff}')
+    })
+}
+
 fn inspect_slide_text(slide: &[u8], notes: &[u8]) -> ReportResult<()> {
     let shapes = report_shape_text(slide, "p:sld")?;
     let mut headings = shapes
@@ -428,14 +489,7 @@ fn inspect_slide_text(slide: &[u8], notes: &[u8]) -> ReportResult<()> {
     let heading = headings.next();
     if headings.next().is_some()
         || !heading.is_some_and(|shape| {
-            shape.text_box
-                && shape.paragraphs.iter().any(|paragraph| {
-                    paragraph.chars().any(|c| {
-                        !c.is_whitespace()
-                            && !c.is_control()
-                            && !matches!(c, '\u{200b}'..='\u{200f}' | '\u{2060}' | '\u{feff}')
-                    })
-                })
+            shape.text_box && shape.paragraphs.iter().any(|text| meaningful_heading(text))
         })
     {
         return Err(invalid("pptx", "section slide has no editable heading"));
@@ -467,7 +521,13 @@ fn inspect_slide_text(slide: &[u8], notes: &[u8]) -> ReportResult<()> {
     let mut previous_end = 0;
     for (shape, marker) in previews {
         let text = shape.paragraphs.join(" ");
-        previous_end = inspect_table_preview(&body.paragraphs, &text, marker, previous_end)?;
+        previous_end = inspect_table_preview(
+            &body.paragraphs,
+            &text,
+            marker,
+            previous_end,
+            shape.preceding_table_rows,
+        )?;
     }
     Ok(())
 }
@@ -477,6 +537,7 @@ fn inspect_table_preview(
     text: &str,
     marker: Option<&str>,
     previous_end: usize,
+    table_rows: Option<usize>,
 ) -> ReportResult<usize> {
     let error = || {
         invalid(
@@ -508,6 +569,12 @@ fn inspect_table_preview(
             .ok_or_else(error)?,
     );
     let digest = fields.next().ok_or_else(error)?;
+    if table_rows.and_then(|rows| rows.checked_sub(1)) != Some(visible) {
+        return Err(invalid(
+            "pptx",
+            "table preview does not match the preceding native table row count",
+        ));
+    }
     let end = start.checked_add(length).ok_or_else(error)?;
     let record = paragraphs.get(start..end).ok_or_else(error)?;
     let row_count = format!("Rows: {total}");
@@ -714,7 +781,7 @@ fn inspect_chart_binding(parts: &BTreeMap<String, Vec<u8>>, name: &str) -> Repor
             "c:externalData" => (5, &["c:chartSpace"]),
             _ => return Ok(()),
         };
-        if parents != required || (index < 4 && !opens) {
+        if parents != required || (index < 4 && !opens) || (index == 4 && counts[2] != 1) {
             return Err(invalid("pptx", "unexpected native chart element position"));
         }
         counts[index] += 1;
@@ -974,6 +1041,8 @@ struct HtmlReadingOrder {
     main_seen: bool,
     opening_seen: bool,
     in_opening: bool,
+    opening_heading_seen: bool,
+    heading_has_text: bool,
 }
 
 impl HtmlReadingOrder {
@@ -994,6 +1063,14 @@ impl HtmlReadingOrder {
             }
             self.opening_seen = true;
             self.in_opening = true;
+        } else if self.in_opening
+            && !self.opening_heading_seen
+            && (parent != Some("section") || tag != "h1" || !opens)
+        {
+            return Err(invalid(
+                "html",
+                "first reading section must start with an h1",
+            ));
         }
         if parent == Some("figcaption")
             && matches!(tag, "h1" | "h2" | "h3")
@@ -1017,25 +1094,67 @@ impl HtmlReadingOrder {
         if tag == "main" && !self.opening_seen {
             return Err(invalid("html", "first reading section is missing"));
         }
+        if self.in_opening && !self.opening_heading_seen {
+            if tag != "h1" || !self.heading_has_text {
+                return Err(invalid(
+                    "html",
+                    "first reading section requires a meaningful h1",
+                ));
+            }
+            self.opening_heading_seen = true;
+        }
         if tag == "section" && self.stack.last().is_some_and(|parent| parent == "main") {
             self.in_opening = false;
         }
         Ok(())
     }
 
-    fn before_opening(&self) -> bool {
-        !self.opening_seen && self.stack.last().is_some_and(|tag| tag == "main")
+    fn checks_opening_text(&self) -> bool {
+        !self.opening_heading_seen
+            && !matches!(self.stack.as_slice(),
+                [html, head, tag] if html == "html" && head == "head" && matches!(tag.as_str(), "title" | "style"))
+    }
+
+    fn text_font<'a>(
+        &self,
+        font: Option<&'a layout::FontMetrics>,
+    ) -> Option<&'a layout::FontMetrics> {
+        font.filter(|_| self.stack.iter().any(|tag| tag == "body"))
+    }
+
+    fn text(&mut self, text: &str, font: Option<&layout::FontMetrics>) -> ReportResult<()> {
+        if self.checks_opening_text() {
+            if self.in_opening && self.stack.last().is_some_and(|tag| tag == "h1") {
+                self.heading_has_text |= meaningful_heading(text);
+            } else if !text.trim().is_empty() {
+                let position = if self.opening_seen {
+                    "text precedes the opening h1"
+                } else {
+                    "text precedes the first reading section"
+                };
+                return Err(invalid("html", position));
+            }
+        }
+        if let Some(font) = self.text_font(font) {
+            font.width(text, 1.0)?;
+        }
+        Ok(())
     }
 
     fn finish(self) -> ReportResult<()> {
-        if !self.main_seen || !self.opening_seen || !self.stack.is_empty() {
+        if !self.main_seen || !self.opening_heading_seen || !self.stack.is_empty() {
             return Err(invalid("html", "first reading section is missing"));
         }
         Ok(())
     }
 }
 
-fn inspect_html(html: &str, document_sha256: &str, binding: Option<&str>) -> ReportResult<()> {
+fn inspect_html(
+    html: &str,
+    document_sha256: &str,
+    binding: Option<&str>,
+    font: Option<&layout::FontMetrics>,
+) -> ReportResult<()> {
     use quick_xml::events::Event;
     const CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
     const TAGS: &[&str] = &[
@@ -1215,23 +1334,17 @@ fn inspect_html(html: &str, document_sha256: &str, binding: Option<&str>) -> Rep
                     reading_order.end(&tag)?;
                 }
             }
-            Event::Text(text)
-                if reading_order
-                    .as_ref()
-                    .is_some_and(HtmlReadingOrder::before_opening)
-                    && !text.as_ref().trim().is_empty() =>
-            {
-                return Err(invalid("html", "text precedes the first reading section"));
+            Event::Text(text) => {
+                if let Some(order) = &mut reading_order {
+                    order.text(text.as_ref(), font)?;
+                }
             }
-            Event::GeneralRef(reference)
-                if reading_order
-                    .as_ref()
-                    .is_some_and(HtmlReadingOrder::before_opening)
-                    && !crate::utils::decode_xml_reference(&reference)?
-                        .trim()
-                        .is_empty() =>
-            {
-                return Err(invalid("html", "text precedes the first reading section"));
+            Event::GeneralRef(reference) => {
+                if let Some(order) = &mut reading_order
+                    && (order.checks_opening_text() || order.text_font(font).is_some())
+                {
+                    order.text(&crate::utils::decode_xml_reference(&reference)?, font)?;
+                }
             }
             Event::DocType(value) if !value.as_ref().eq_ignore_ascii_case("html") => {
                 return Err(invalid("html", "unsupported doctype"));

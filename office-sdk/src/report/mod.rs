@@ -390,14 +390,11 @@ pub fn render_report(
         return Err(ReportError::LimitExceeded("font bytes".into()));
     }
     let metrics = layout::FontMetrics::new(font)?;
-    if template == Template::SectionFirst {
-        if document.sections.is_empty() {
-            return Err(invalid(
-                "sections",
-                "section_first_v1 requires at least one section",
-            ));
-        }
-        metrics.validate_document(document)?;
+    if template == Template::SectionFirst && document.sections.is_empty() {
+        return Err(invalid(
+            "sections",
+            "section_first_v1 requires at least one section",
+        ));
     }
     let mut manifest = ReportManifest {
         schema_version: REPORT_SCHEMA_VERSION,
@@ -466,7 +463,9 @@ pub fn render_report(
     }
     manifest.byte_size = bytes.len();
     manifest.output_sha256 = sha256(&bytes);
-    manifest.inspection = inspect_report(&bytes, &manifest)?;
+    let html_font = (template == Template::SectionFirst && options.format == ReportFormat::Html)
+        .then_some(&metrics);
+    manifest.inspection = inspect::inspect_with_html_font(&bytes, &manifest, html_font)?;
     Ok(RenderedReport { bytes, manifest })
 }
 /// Validate the typed document without loading any rendering engine.

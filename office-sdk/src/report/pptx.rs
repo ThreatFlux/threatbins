@@ -13,6 +13,7 @@ use std::{
 };
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 pub(super) const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+pub(super) const TABLE_GRAPHIC_URI: &str = "http://schemas.openxmlformats.org/drawingml/2006/table";
 pub(super) const TABLE_PREVIEW_SHAPE_NAME: &str = "Report table preview";
 
 struct ChartPart<'a> {
@@ -516,7 +517,7 @@ fn table_frame(
 ) -> String {
     let vertical_inset = if inset == 8.0 { 6.0 } else { inset };
     let mut s = format!(
-        "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"{id}\" name=\"Editable report table\"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x=\"{}\" y=\"{}\"/><a:ext cx=\"{}\" cy=\"{}\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl><a:tblPr firstRow=\"1\" bandRow=\"1\"/><a:tblGrid>",
+        "<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"{id}\" name=\"Editable report table\"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x=\"{}\" y=\"{}\"/><a:ext cx=\"{}\" cy=\"{}\"/></p:xfrm><a:graphic><a:graphicData uri=\"{TABLE_GRAPHIC_URI}\"><a:tbl><a:tblPr firstRow=\"1\" bandRow=\"1\"/><a:tblGrid>",
         emu(frame.x),
         emu(frame.y),
         emu(frame.width),

@@ -554,6 +554,7 @@ pub(super) fn layout<'a>(
                 _ => {}
             }
         }
+        metrics.width(&notes, 1.0)?;
         slides.push(Slide {
             id: &section.id,
             items,

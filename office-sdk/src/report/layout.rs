@@ -36,29 +36,6 @@ impl FontMetrics {
         }
         Ok(width)
     }
-    pub fn validate_document(&self, document: &ReportDocument) -> ReportResult<()> {
-        fn check(metrics: &FontMetrics, value: &serde_json::Value) -> ReportResult<()> {
-            match value {
-                serde_json::Value::String(text) => {
-                    metrics.width(text, 1.0)?;
-                }
-                serde_json::Value::Array(values) => {
-                    for value in values {
-                        check(metrics, value)?;
-                    }
-                }
-                serde_json::Value::Object(values) => {
-                    for value in values.values() {
-                        check(metrics, value)?;
-                    }
-                }
-                _ => {}
-            }
-            Ok(())
-        }
-        check(self, &serde_json::to_value(document)?)
-    }
-
     pub fn wrap(&self, text: &str, size: f64, width: f64) -> ReportResult<Vec<String>> {
         let mut result = Vec::new();
         for paragraph in text.split('\n') {

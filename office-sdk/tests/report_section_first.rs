@@ -602,6 +602,79 @@ fn section_first_html_requires_an_opening_section_directly_inside_main() {
 }
 
 #[test]
+fn section_first_html_requires_a_meaningful_opening_h1() {
+    let report = render_report(&fixture(), &options(ReportFormat::Html)).unwrap();
+    let output = std::str::from_utf8(&report.bytes).unwrap();
+    let heading = "<h1>Bottom line</h1>";
+    for replacement in [
+        "<h3>Bottom line</h3>",
+        "<p>Introduction</p><h1>Bottom line</h1>",
+        "<h1/>",
+    ] {
+        let changed = output.replacen(heading, replacement, 1);
+        assert_invalid_artifact(
+            &report,
+            changed.as_bytes(),
+            "first reading section must start with an h1",
+        );
+    }
+    for replacement in ["<h1></h1>", "<h1> \n&#32;&#x200b;</h1>"] {
+        let changed = output.replacen(heading, replacement, 1);
+        assert_invalid_artifact(
+            &report,
+            changed.as_bytes(),
+            "first reading section requires a meaningful h1",
+        );
+    }
+    for preamble in ["Preface ", "&#x50;reface "] {
+        let changed = output.replacen(heading, &format!("{preamble}{heading}"), 1);
+        assert_invalid_artifact(&report, changed.as_bytes(), "text precedes the opening h1");
+    }
+}
+
+#[test]
+fn section_first_html_rejects_body_text_before_main_and_accepts_escaped_text() {
+    let mut document = fixture();
+    document.title = "Review <draft> & notes".into();
+    document.sections[0].title = "&lt; summary >".into();
+    document.sections[0].blocks[0] = ReportBlock::Paragraph {
+        text: "Literal &lt;p&gt; followed by <result> & notes".into(),
+    };
+    let report = render_report(&document, &options(ReportFormat::Html)).unwrap();
+    let output = std::str::from_utf8(&report.bytes).unwrap();
+    assert!(output.contains("<title>Review &lt;draft&gt; &amp; notes</title>"));
+    assert!(output.contains("<h1>&amp;lt; summary &gt;</h1>"));
+    assert!(output.contains("Literal &amp;lt;p&amp;gt; followed by &lt;result&gt; &amp; notes"));
+    let whitespace = output
+        .replacen("<body><main>", "<body> \n&#32;<div>\t</div><main>\n", 1)
+        .replacen(
+            "<h1>&amp;lt; summary &gt;</h1>",
+            " \n&#x9;<h1>&lt;&amp;&#x41;&gt;</h1>",
+            1,
+        );
+    assert!(
+        inspect_report(
+            whitespace.as_bytes(),
+            &rebind_bytes(&report, whitespace.as_bytes())
+        )
+        .is_ok()
+    );
+
+    for preamble in [
+        "Preface ",
+        "&#x50;&#114;&#101;&#102;&#97;&#99;&#101;",
+        "<div><p>&lt;preface&gt;</p></div>",
+    ] {
+        let changed = output.replacen("<body>", &format!("<body>{preamble}"), 1);
+        assert_invalid_artifact(
+            &report,
+            changed.as_bytes(),
+            "text precedes the first reading section",
+        );
+    }
+}
+
+#[test]
 fn native_heading_must_be_meaningful_text_in_the_heading_textbox() {
     let document: ReportDocument = serde_json::from_str(DENSE).unwrap();
     let report = render_report(&document, &options(ReportFormat::Pptx)).unwrap();
@@ -778,6 +851,95 @@ fn preview_requires_the_complete_record_in_the_native_notes_body() {
 }
 
 #[test]
+fn each_preview_counts_only_its_preceding_native_table_rows() {
+    let table = |heading: &str, rows| ReportBlock::Table {
+        table: ReportTable {
+            caption: String::new(),
+            headers: vec![heading.into()],
+            rows: (1..=rows)
+                .map(|n| vec![format!("Recorded result {n}")])
+                .collect(),
+        },
+    };
+    let mut document = fixture();
+    document.sections.truncate(1);
+    document.sections[0].blocks = vec![
+        table("First observation", 24),
+        table("Second observation", 25),
+    ];
+    let report = render_report(&document, &options(ReportFormat::Pptx)).unwrap();
+    let path = "ppt/slides/slide1.xml";
+    let slide = xml(&report.bytes, path);
+    assert!(inspect_report(&report.bytes, &report.manifest).is_ok());
+    assert_in_order(
+        &slide,
+        "First observation",
+        "office-report-table-preview-v1:6:24:",
+    );
+    assert_in_order(
+        &slide,
+        "Second observation",
+        "office-report-table-preview-v1:6:25:",
+    );
+    let second_table = slide
+        .split("<a:tbl>")
+        .nth(2)
+        .unwrap()
+        .split("</a:tbl>")
+        .next()
+        .unwrap();
+    assert_eq!(second_table.matches("<a:tr ").count(), 7);
+    let body_row = second_table
+        .split("<a:tr ")
+        .nth(2)
+        .unwrap()
+        .split_once("</a:tr>")
+        .unwrap()
+        .0;
+    let removed = second_table.replacen(&format!("<a:tr {body_row}</a:tr>"), "", 1);
+    let bytes = replace_part(&report.bytes, path, second_table, &removed);
+    assert_invalid_artifact(
+        &report,
+        &bytes,
+        "table preview does not match the preceding native table row count",
+    );
+}
+
+#[test]
+fn zero_visible_preview_still_requires_a_native_header_row() {
+    let mut document = fixture();
+    document.sections.truncate(1);
+    document.sections[0].blocks = vec![ReportBlock::Table {
+        table: ReportTable {
+            caption: String::new(),
+            headers: vec![
+                (1..=29)
+                    .map(|n| format!("Observation {n}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ],
+            rows: (1..=24)
+                .map(|n| vec![format!("Recorded result {n}")])
+                .collect(),
+        },
+    }];
+    let report = render_report(&document, &options(ReportFormat::Pptx)).unwrap();
+    let path = "ppt/slides/slide1.xml";
+    let slide = xml(&report.bytes, path);
+    assert!(inspect_report(&report.bytes, &report.manifest).is_ok());
+    assert!(slide.contains("office-report-table-preview-v1:0:24:"));
+    assert_eq!(slide.matches("<a:tr ").count(), 1);
+    let start = slide.find("<a:tr ").unwrap();
+    let end = slide.find("</a:tr>").unwrap() + "</a:tr>".len();
+    let bytes = replace_part(&report.bytes, path, &slide[start..end], "");
+    assert_invalid_artifact(
+        &report,
+        &bytes,
+        "table preview does not match the preceding native table row count",
+    );
+}
+
+#[test]
 fn section_chart_requires_the_chart_plot_and_line_hierarchy() {
     let report = render_report(&fixture(), &options(ReportFormat::Pptx)).unwrap();
     let path = "ppt/charts/chart1.xml";
@@ -836,6 +998,118 @@ fn section_chart_requires_the_chart_plot_and_line_hierarchy() {
         r#"<c:plotArea xmlns:c="urn:other">"#,
     );
     assert_invalid_artifact(&report, &foreign_plot, "unexpected OOXML element namespace");
+
+    let gap = r#"<c:dispBlanksAs val="gap"/>"#;
+    assert_in_order(&chart, "</c:plotArea>", gap);
+    let reordered = replace_part(&report.bytes, path, gap, "");
+    let reordered = replace_part(
+        &reordered,
+        path,
+        "<c:plotArea>",
+        &format!("{gap}<c:plotArea>"),
+    );
+    assert_invalid_artifact(
+        &report,
+        &reordered,
+        "unexpected native chart element position",
+    );
+}
+
+#[test]
+fn section_first_glyph_checks_follow_anchor_ids_only_when_printed() {
+    let mut document = fixture();
+    document.sections.truncate(1);
+    document.sections[0].id = "section-🦀".into();
+    document.sections[0].blocks = vec![
+        ReportBlock::AnchoredTable {
+            table: ReportTable {
+                caption: String::new(),
+                headers: vec!["Observation".into()],
+                rows: vec![vec!["Recorded result".into()]],
+            },
+            row_ids: vec!["row-🦀".into()],
+        },
+        ReportBlock::Links {
+            links: vec![
+                ReportLink {
+                    label: "Review the section".into(),
+                    target_id: "section-🦀".into(),
+                },
+                ReportLink {
+                    label: "Review the row".into(),
+                    target_id: "row-🦀".into(),
+                },
+            ],
+        },
+    ];
+    for format in FORMATS {
+        render_report(&document, &options(format)).unwrap();
+    }
+
+    // The longer table moves complete row records, including their IDs, into
+    // PowerPoint speaker notes. The same IDs remain anchors in HTML and PDF.
+    let ReportBlock::AnchoredTable { table, row_ids } = &mut document.sections[0].blocks[0] else {
+        unreachable!()
+    };
+    for index in 2..=24 {
+        table.rows.push(vec![format!("Recorded result {index}")]);
+        row_ids.push(format!("row-{index}"));
+    }
+    for format in [ReportFormat::Pdf, ReportFormat::Html] {
+        render_report(&document, &options(format)).unwrap();
+    }
+    let result = render_report(&document, &options(ReportFormat::Pptx));
+    assert!(matches!(result, Err(ReportError::UnsupportedGlyph(code)) if code == '🦀' as u32));
+}
+
+#[test]
+fn section_first_glyph_checks_cover_visible_source_content() {
+    let mutations: [fn(&mut ReportDocument); 6] = [
+        |document| {
+            document.sections[0].blocks[0] = ReportBlock::Paragraph {
+                text: format!("{}🦀", "Wrapped report text. ".repeat(45)),
+            };
+        },
+        |document| {
+            let ReportBlock::AnchoredTable { table, .. } = &mut document.sections[1].blocks[0]
+            else {
+                unreachable!()
+            };
+            table.rows[0][0].push('🦀');
+        },
+        |document| {
+            let ReportBlock::Links { links } = &mut document.sections[0].blocks[2] else {
+                unreachable!()
+            };
+            links[0].label.push('🦀');
+        },
+        |document| {
+            let chart = document
+                .sections
+                .iter_mut()
+                .flat_map(|section| &mut section.blocks)
+                .find_map(|block| match block {
+                    ReportBlock::Chart { chart } => Some(chart),
+                    _ => None,
+                })
+                .unwrap();
+            chart.description.push('🦀');
+        },
+        |document| document.definitions[0].meaning.push('🦀'),
+        |document| document.provenance.sources[0].id.push('🦀'),
+    ];
+    for (case, mutate) in mutations.into_iter().enumerate() {
+        let mut document = fixture();
+        mutate(&mut document);
+        for format in FORMATS {
+            let result = render_report(&document, &options(format));
+            assert!(
+                matches!(&result, Err(ReportError::UnsupportedGlyph(code)) if *code == '🦀' as u32),
+                "{format:?} glyph case {case}: {:?}",
+                result.err()
+            );
+        }
+    }
 }
 
 #[test]
