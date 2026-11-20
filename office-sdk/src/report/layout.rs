@@ -34,6 +34,29 @@ impl FontMetrics {
         }
         Ok(width)
     }
+    pub fn validate_document(&self, document: &ReportDocument) -> ReportResult<()> {
+        fn check(metrics: &FontMetrics, value: &serde_json::Value) -> ReportResult<()> {
+            match value {
+                serde_json::Value::String(text) => {
+                    metrics.width(text, 1.0)?;
+                }
+                serde_json::Value::Array(values) => {
+                    for value in values {
+                        check(metrics, value)?;
+                    }
+                }
+                serde_json::Value::Object(values) => {
+                    for value in values.values() {
+                        check(metrics, value)?;
+                    }
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+        check(self, &serde_json::to_value(document)?)
+    }
+
     pub fn wrap(&self, text: &str, size: f64, width: f64) -> ReportResult<Vec<String>> {
         let mut result = Vec::new();
         for paragraph in text.split('\n') {
@@ -94,7 +117,12 @@ pub(crate) struct Page {
     pub anchors: std::collections::BTreeMap<String, f64>,
 }
 
-pub(crate) fn paginate(d: &ReportDocument, m: &FontMetrics, max: usize) -> ReportResult<Vec<Page>> {
+pub(crate) fn paginate(
+    d: &ReportDocument,
+    m: &FontMetrics,
+    max: usize,
+    template: Template,
+) -> ReportResult<Vec<Page>> {
     let common = format!(
         "Document: {}\nRevision: {}\nPeriod: {}\nScope: {}\nComparison: {}\nEvidence SHA-256: {}\nTemplate: {}",
         d.document_id,
@@ -103,7 +131,10 @@ pub(crate) fn paginate(d: &ReportDocument, m: &FontMetrics, max: usize) -> Repor
         d.scope,
         d.comparison,
         d.provenance.evidence_sha256,
-        REPORT_TEMPLATE
+        match template {
+            Template::Executive => REPORT_TEMPLATE,
+            Template::SectionFirst => SECTION_FIRST_TEMPLATE,
+        }
     );
     let mut pages = Vec::new();
     let intro = format!(
@@ -117,11 +148,24 @@ pub(crate) fn paginate(d: &ReportDocument, m: &FontMetrics, max: usize) -> Repor
         d.document_id,
         d.revision
     );
-    add_text(&mut pages, "Report overview", &intro, m, &common, max)?;
-    for section in &d.sections {
+    if template == Template::Executive {
+        add_text(&mut pages, "Report overview", &intro, m, &common, max)?;
+    }
+    for (index, section) in d.sections.iter().enumerate() {
         let section_start = pages.len();
-        for block in &section.blocks {
+        let mut blocks = section.blocks.iter().peekable();
+        while let Some(block) = blocks.next() {
             match block {
+                ReportBlock::Paragraph { text } if template == Template::SectionFirst => {
+                    let mut prose = text.clone();
+                    while let Some(ReportBlock::Paragraph { text }) =
+                        blocks.next_if(|block| matches!(block, ReportBlock::Paragraph { .. }))
+                    {
+                        prose.push_str("\n\n");
+                        prose.push_str(text);
+                    }
+                    add_text(&mut pages, &section.title, &prose, m, &common, max)?;
+                }
                 ReportBlock::Paragraph { text } => {
                     add_text(&mut pages, &section.title, text, m, &common, max)?
                 }
@@ -223,8 +267,14 @@ pub(crate) fn paginate(d: &ReportDocument, m: &FontMetrics, max: usize) -> Repor
                 }
             }
         }
+        if template == Template::SectionFirst && section_start == pages.len() {
+            add_text(&mut pages, &section.title, "", m, &common, max)?;
+        }
         if let Some(page) = pages.get_mut(section_start) {
             page.anchors.insert(section.id.clone(), 24.0);
+        }
+        if template == Template::SectionFirst && index == 0 {
+            add_text(&mut pages, "Report context", &intro, m, &common, max)?;
         }
     }
     if !d.definitions.is_empty() {
@@ -251,7 +301,7 @@ pub(crate) fn paginate(d: &ReportDocument, m: &FontMetrics, max: usize) -> Repor
             max,
         )?;
     }
-    let provenance = format!(
+    let mut provenance = format!(
         "Evidence SHA-256: {}\nDocument SHA-256: {}\n{}",
         d.provenance.evidence_sha256,
         report_document_sha256(d)?,
@@ -262,6 +312,12 @@ pub(crate) fn paginate(d: &ReportDocument, m: &FontMetrics, max: usize) -> Repor
             .collect::<Vec<_>>()
             .join("\n")
     );
+    if template == Template::SectionFirst {
+        provenance.push_str(&format!(
+            "\nTemplate: {SECTION_FIRST_TEMPLATE}\nDocument: {}\nRevision: {}",
+            d.document_id, d.revision,
+        ));
+    }
     add_text(&mut pages, "Provenance", &provenance, m, &common, max)?;
     // Keep definitions and limitations in the cover's notes without repeating
     // arbitrarily large source content in every slide's ZIP part.

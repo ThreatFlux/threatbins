@@ -1,0 +1,341 @@
+{
+  "schema_version": 1,
+  "document_id": "sample-distribution-review",
+  "revision": "revision-5",
+  "report_type": "operations_review",
+  "title": "Distribution Review",
+  "subtitle": "Synthetic combined observations and recorded work areas",
+  "period": "July through September 2026",
+  "scope": "Receiving, staging and dispatch",
+  "comparison": "April through June 2026, equivalent scope",
+  "provenance": {
+    "evidence_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "sources": [
+      {
+        "id": "synthetic-observations",
+        "revision": "rev-5"
+      }
+    ]
+  },
+  "definitions": [
+    {
+      "term": "Recorded coverage",
+      "meaning": "Share of eligible observations successfully recorded."
+    }
+  ],
+  "limitations": [
+    "Several work areas did not return a measurement."
+  ],
+  "sections": [
+    {
+      "id": "summary",
+      "title": "Bottom line",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Recorded coverage reached 84 percent. Continue sampling the staging and dispatch areas."
+        },
+        {
+          "type": "links",
+          "links": [
+            {
+              "label": "Review the last work area",
+              "target_id": "area-24"
+            },
+            {
+              "label": "Review the comparison charts",
+              "target_id": "trends"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "trends",
+      "title": "Combined coverage trends",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "text": "Measurements for the combined operation and both workstreams use the same recorded checkpoints."
+        },
+        {
+          "type": "chart",
+          "chart": {
+            "title": "Combined operation",
+            "description": "Measured checkpoints for combined operation.",
+            "labels": [
+              "Opening checkpoint for the equivalent recorded operating schedule",
+              "Mid-period scheduled checkpoint",
+              "Closing scheduled checkpoint"
+            ],
+            "series": [
+              {
+                "name": "Recorded",
+                "values": [
+                  72,
+                  79,
+                  84
+                ]
+              }
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "target": 85,
+            "bands": []
+          }
+        },
+        {
+          "type": "chart",
+          "chart": {
+            "title": "Staging workstream",
+            "description": "Measured checkpoints for staging workstream.",
+            "labels": [
+              "Opening checkpoint for the equivalent recorded operating schedule",
+              "Mid-period scheduled checkpoint",
+              "Closing scheduled checkpoint"
+            ],
+            "series": [
+              {
+                "name": "Recorded",
+                "values": [
+                  67,
+                  null,
+                  78
+                ]
+              }
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "target": 80,
+            "bands": []
+          }
+        },
+        {
+          "type": "chart",
+          "chart": {
+            "title": "Dispatch workstream",
+            "description": "Measured checkpoints for dispatch workstream.",
+            "labels": [
+              "Opening checkpoint for the equivalent recorded operating schedule",
+              "Mid-period scheduled checkpoint",
+              "Closing scheduled checkpoint"
+            ],
+            "series": [
+              {
+                "name": "Recorded",
+                "values": [
+                  75,
+                  83,
+                  89
+                ]
+              }
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "target": 85,
+            "bands": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "coverage-areas",
+      "title": "Coverage by work area",
+      "blocks": [
+        {
+          "type": "anchored_table",
+          "table": {
+            "caption": "Recorded work areas",
+            "headers": [
+              "Area",
+              "Recorded coverage",
+              "Target",
+              "Observation"
+            ],
+            "rows": [
+              [
+                "Receiving area 01",
+                "71",
+                "85",
+                "Observed"
+              ],
+              [
+                "Outbound area 02",
+                "78",
+                "85",
+                "Observed"
+              ],
+              [
+                "Returns area 03",
+                "85",
+                "85",
+                "Observed"
+              ],
+              [
+                "Staging area 04",
+                "65",
+                "85",
+                "Observed"
+              ],
+              [
+                "Quality area 05",
+                "72",
+                "85",
+                "Observed"
+              ],
+              [
+                "Reconciliation area 06",
+                "79",
+                "85",
+                "Observed"
+              ],
+              [
+                "Packing area 07",
+                "86",
+                "85",
+                "Observed"
+              ],
+              [
+                "Loading area 08",
+                "66",
+                "85",
+                "Observed"
+              ],
+              [
+                "Receiving area 09",
+                "Not measured",
+                "85",
+                "Coverage gap"
+              ],
+              [
+                "Outbound area 10",
+                "80",
+                "85",
+                "Observed"
+              ],
+              [
+                "Returns area 11",
+                "87",
+                "85",
+                "Observed"
+              ],
+              [
+                "Staging area 12",
+                "67",
+                "85",
+                "Observed"
+              ],
+              [
+                "Quality area 13",
+                "74",
+                "85",
+                "Observed"
+              ],
+              [
+                "Reconciliation area 14",
+                "81",
+                "85",
+                "Observed"
+              ],
+              [
+                "Packing area 15",
+                "88",
+                "85",
+                "Observed"
+              ],
+              [
+                "Loading area 16",
+                "68",
+                "85",
+                "Observed"
+              ],
+              [
+                "Receiving area 17",
+                "75",
+                "85",
+                "Observed"
+              ],
+              [
+                "Outbound area 18",
+                "82",
+                "85",
+                "Observed"
+              ],
+              [
+                "Returns area 19",
+                "89",
+                "85",
+                "Observed"
+              ],
+              [
+                "Staging area 20",
+                "69",
+                "85",
+                "Observed"
+              ],
+              [
+                "Quality area 21",
+                "76",
+                "85",
+                "Observed"
+              ],
+              [
+                "Reconciliation area 22",
+                "83",
+                "85",
+                "Observed"
+              ],
+              [
+                "Packing area 23",
+                "90",
+                "85",
+                "Observed"
+              ],
+              [
+                "Final dispatch staging corridor",
+                "Not measured",
+                "85",
+                "Coverage gap"
+              ]
+            ]
+          },
+          "row_ids": [
+            "area-1",
+            "area-2",
+            "area-3",
+            "area-4",
+            "area-5",
+            "area-6",
+            "area-7",
+            "area-8",
+            "area-9",
+            "area-10",
+            "area-11",
+            "area-12",
+            "area-13",
+            "area-14",
+            "area-15",
+            "area-16",
+            "area-17",
+            "area-18",
+            "area-19",
+            "area-20",
+            "area-21",
+            "area-22",
+            "area-23",
+            "area-24"
+          ]
+        },
+        {
+          "type": "links",
+          "links": [
+            {
+              "label": "Return to the opening section",
+              "target_id": "summary"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

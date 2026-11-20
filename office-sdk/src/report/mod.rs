@@ -15,13 +15,36 @@ mod navigation;
 mod pdf;
 #[cfg(feature = "report")]
 mod pptx;
+#[cfg(feature = "report")]
+mod section;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const REPORT_SCHEMA_VERSION: u32 = 1;
+/// Default and historical report template.
 pub const REPORT_TEMPLATE: &str = "executive_v1";
+/// Opt-in schema-1 template with section-first reading order and one slide per section.
+pub const SECTION_FIRST_TEMPLATE: &str = "section_first_v1";
+
+#[cfg(feature = "report")]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Template {
+    Executive,
+    SectionFirst,
+}
+
+#[cfg(feature = "report")]
+impl Template {
+    fn parse(id: &str) -> ReportResult<Self> {
+        match id {
+            REPORT_TEMPLATE => Ok(Self::Executive),
+            SECTION_FIRST_TEMPLATE => Ok(Self::SectionFirst),
+            _ => Err(ReportError::UnsupportedTemplate(id.into())),
+        }
+    }
+}
 #[cfg(feature = "report")]
 pub(crate) const DEFAULT_FONT: &[u8] = include_bytes!("../../assets/fonts/NotoSans-Regular.ttf");
 
@@ -242,7 +265,7 @@ pub struct ReportCapabilities {
 pub fn report_capabilities() -> ReportCapabilities {
     ReportCapabilities {
         schema_version: REPORT_SCHEMA_VERSION,
-        templates: vec![REPORT_TEMPLATE.into()],
+        templates: vec![REPORT_TEMPLATE.into(), SECTION_FIRST_TEMPLATE.into()],
         formats: vec![ReportFormat::Pdf, ReportFormat::Html, ReportFormat::Pptx],
         native_powerpoint_charts: true,
         chart_types: vec!["line".into()],
@@ -309,13 +332,44 @@ pub(crate) fn xml(s: &str) -> String {
 }
 
 #[cfg(feature = "report")]
+fn period_comparison(document: &ReportDocument) -> String {
+    format!(
+        "Period: {} · Comparison: {}",
+        document.period, document.comparison
+    )
+}
+
+#[cfg(feature = "report")]
+const BINDING_PREFIX: &str = "office-report-binding-v1:";
+
+#[cfg(feature = "report")]
+impl ReportManifest {
+    // The embedded receipt deliberately excludes byte fields and derived
+    // inspection results. Those are computed after artifact serialization.
+    fn artifact_binding(&self) -> ReportResult<String> {
+        let fields = serde_json::to_vec(&(
+            self.schema_version,
+            &self.sdk_version,
+            &self.document_id,
+            &self.revision,
+            &self.document_sha256,
+            &self.evidence_sha256,
+            &self.template,
+            self.format,
+            &self.mime_type,
+            self.pages_or_slides,
+            &self.inspection.font_sha256,
+        ))?;
+        Ok(format!("{BINDING_PREFIX}{}", sha256(&fields)))
+    }
+}
+
+#[cfg(feature = "report")]
 pub fn render_report(
     document: &ReportDocument,
     options: &ReportRenderOptions,
 ) -> ReportResult<RenderedReport> {
-    if options.template != REPORT_TEMPLATE {
-        return Err(ReportError::UnsupportedTemplate(options.template.clone()));
-    }
+    let template = Template::parse(&options.template)?;
     validate(document, &options.limits)?;
     let digest = report_document_sha256(document)?;
     if options
@@ -336,69 +390,84 @@ pub fn render_report(
         return Err(ReportError::LimitExceeded("font bytes".into()));
     }
     let metrics = layout::FontMetrics::new(font)?;
-    let pages = layout::paginate(document, &metrics, options.limits.max_pages)?;
-    let bytes = match options.format {
-        ReportFormat::Html => html::render(document, &digest, font).into_bytes(),
-        ReportFormat::Pdf => pdf::render(document, &pages, font)?,
-        ReportFormat::Pptx => pptx::render(document, &pages, font, &options.font_family)?,
+    if template == Template::SectionFirst {
+        if document.sections.is_empty() {
+            return Err(invalid(
+                "sections",
+                "section_first_v1 requires at least one section",
+            ));
+        }
+        metrics.validate_document(document)?;
+    }
+    let mut manifest = ReportManifest {
+        schema_version: REPORT_SCHEMA_VERSION,
+        sdk_version: env!("CARGO_PKG_VERSION").into(),
+        document_id: document.document_id.clone(),
+        revision: document.revision.clone(),
+        document_sha256: digest,
+        evidence_sha256: document.provenance.evidence_sha256.clone(),
+        template: options.template.clone(),
+        format: options.format,
+        mime_type: options.format.mime_type().into(),
+        byte_size: 0,
+        output_sha256: String::new(),
+        pages_or_slides: None,
+        inspection: ReportInspection {
+            structural_checks: Vec::new(),
+            native_editable_text: false,
+            native_editable_tables: false,
+            native_editable_charts: false,
+            font_sha256: sha256(font),
+            visual_review_required: true,
+        },
+    };
+    let bytes = match (template, options.format) {
+        (Template::SectionFirst, ReportFormat::Html) => html::render(
+            document,
+            &manifest.document_sha256,
+            font,
+            Some(&manifest.artifact_binding()?),
+        )
+        .into_bytes(),
+        (Template::SectionFirst, ReportFormat::Pptx) => {
+            let slides = section::layout(
+                document,
+                &metrics,
+                options.limits.max_pages,
+                &manifest.document_sha256,
+            )?;
+            manifest.pages_or_slides = Some(slides.len());
+            pptx::render_sections(
+                document,
+                &slides,
+                &options.font_family,
+                &manifest.artifact_binding()?,
+            )?
+        }
+        (_, format) => {
+            let pages = layout::paginate(document, &metrics, options.limits.max_pages, template)?;
+            manifest.pages_or_slides = (format != ReportFormat::Html).then_some(pages.len());
+            match format {
+                ReportFormat::Html => {
+                    html::render(document, &manifest.document_sha256, font, None).into_bytes()
+                }
+                ReportFormat::Pdf => {
+                    let binding = (template == Template::SectionFirst)
+                        .then(|| manifest.artifact_binding())
+                        .transpose()?;
+                    pdf::render(document, &pages, font, binding.as_deref())?
+                }
+                ReportFormat::Pptx => pptx::render(document, &pages, font, &options.font_family)?,
+            }
+        }
     };
     if bytes.len() > options.limits.max_output_bytes {
         return Err(ReportError::LimitExceeded("output bytes".into()));
     }
-    let mut checks = vec![
-        "validated schema, shape, bounds and finite values".into(),
-        "shared source document and measured layout".into(),
-    ];
-    checks.push(
-        match options.format {
-            ReportFormat::Pdf => "embedded font and bounded paginated PDF",
-            ReportFormat::Html => "escaped script-free self-contained HTML",
-            ReportFormat::Pptx => {
-                "widescreen OOXML, native editable text/tables/charts and embedded chart data"
-            }
-        }
-        .into(),
-    );
-    let mut result = RenderedReport {
-        manifest: ReportManifest {
-            schema_version: 1,
-            sdk_version: env!("CARGO_PKG_VERSION").into(),
-            document_id: document.document_id.clone(),
-            revision: document.revision.clone(),
-            document_sha256: digest,
-            evidence_sha256: document.provenance.evidence_sha256.clone(),
-            template: options.template.clone(),
-            format: options.format,
-            mime_type: options.format.mime_type().into(),
-            byte_size: bytes.len(),
-            output_sha256: sha256(&bytes),
-            pages_or_slides: (options.format != ReportFormat::Html).then_some(pages.len()),
-            inspection: ReportInspection {
-                structural_checks: checks,
-                native_editable_text: options.format == ReportFormat::Pptx,
-                native_editable_tables: options.format == ReportFormat::Pptx
-                    && document.sections.iter().flat_map(|s| &s.blocks).any(|b| {
-                        matches!(
-                            b,
-                            ReportBlock::Table { .. }
-                                | ReportBlock::AnchoredTable { .. }
-                                | ReportBlock::Chart { .. }
-                        )
-                    }),
-                native_editable_charts: options.format == ReportFormat::Pptx
-                    && document
-                        .sections
-                        .iter()
-                        .flat_map(|s| &s.blocks)
-                        .any(|b| matches!(b, ReportBlock::Chart { .. })),
-                font_sha256: sha256(font),
-                visual_review_required: true,
-            },
-        },
-        bytes,
-    };
-    result.manifest.inspection = inspect_report(&result.bytes, &result.manifest)?;
-    Ok(result)
+    manifest.byte_size = bytes.len();
+    manifest.output_sha256 = sha256(&bytes);
+    manifest.inspection = inspect_report(&bytes, &manifest)?;
+    Ok(RenderedReport { bytes, manifest })
 }
 /// Validate the typed document without loading any rendering engine.
 pub fn validate_report_document(

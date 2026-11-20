@@ -14,15 +14,19 @@ pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<R
     if bytes.len() > ReportLimits::default().max_output_bytes {
         return Err(ReportError::LimitExceeded("inspection bytes".into()));
     }
+    let template = Template::parse(&manifest.template)?;
     if manifest.schema_version != REPORT_SCHEMA_VERSION
-        || manifest.template != REPORT_TEMPLATE
         || manifest.mime_type != manifest.format.mime_type()
+        || (manifest.format == ReportFormat::Html && manifest.pages_or_slides.is_some())
     {
         return Err(invalid(
             "manifest",
             "unsupported schema/template or MIME mismatch",
         ));
     }
+    let binding = (template == Template::SectionFirst)
+        .then(|| manifest.artifact_binding())
+        .transpose()?;
     let mut result = manifest.inspection.clone();
     result.native_editable_text = false;
     result.native_editable_tables = false;
@@ -35,13 +39,28 @@ pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<R
             if Some(pdf.get_pages().len()) != manifest.pages_or_slides {
                 return Err(invalid("pdf", "page count mismatch"));
             }
+            if let Ok(info) = pdf
+                .trailer
+                .get(b"Info")
+                .and_then(lopdf::Object::as_reference)
+                && let Ok(info) = pdf.get_dictionary(info)
+                && let Ok(subject) = info.get(b"Subject").and_then(lopdf::Object::as_str)
+            {
+                let subject = pdf_text(subject);
+                verify_binding(
+                    subject.as_deref().filter(|s| s.starts_with(BINDING_PREFIX)),
+                    binding.as_deref(),
+                )?;
+            } else {
+                verify_binding(None, binding.as_deref())?;
+            }
             result
                 .structural_checks
                 .push("PDF parsed and page count matches manifest".into());
         }
         ReportFormat::Html => {
             let h = std::str::from_utf8(bytes).map_err(|_| invalid("html", "not UTF-8"))?;
-            inspect_html(h, &manifest.document_sha256)?;
+            inspect_html(h, &manifest.document_sha256, binding.as_deref())?;
             result
                 .structural_checks
                 .push("UTF-8 offline HTML with document binding and no active content".into());
@@ -62,6 +81,17 @@ pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<R
                 parts
                     .get("ppt/theme/theme1.xml")
                     .ok_or_else(|| invalid("pptx", "missing report theme"))?,
+            )?;
+            let keywords = parts
+                .get("docProps/core.xml")
+                .map(|core| core_keywords(core))
+                .transpose()?
+                .flatten();
+            verify_binding(
+                keywords
+                    .as_deref()
+                    .filter(|s| s.starts_with(BINDING_PREFIX)),
+                binding.as_deref(),
             )?;
             let presentation = std::str::from_utf8(
                 parts
@@ -87,12 +117,22 @@ pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<R
                 .keys()
                 .filter(|n| n.starts_with("ppt/embeddings/") && n.ends_with(".xlsx"))
                 .count();
-            result.native_editable_text = parts.iter().any(|(n, v)| {
-                n.starts_with("ppt/slides/slide") && String::from_utf8_lossy(v).contains("<a:t")
-            });
-            result.native_editable_tables = parts.iter().any(|(n, v)| {
-                n.starts_with("ppt/slides/slide") && String::from_utf8_lossy(v).contains("<a:tbl>")
-            });
+            if template == Template::SectionFirst {
+                result.native_editable_tables =
+                    inspect_section_deck(&parts, presentation.as_bytes(), count, charts)?;
+                result.native_editable_text = true;
+                result.structural_checks.push(
+                    "ordered native slides, notes, chart/workbook and navigation references verified".into(),
+                );
+            } else {
+                result.native_editable_text = parts.iter().any(|(n, v)| {
+                    n.starts_with("ppt/slides/slide") && String::from_utf8_lossy(v).contains("<a:t")
+                });
+                result.native_editable_tables = parts.iter().any(|(n, v)| {
+                    n.starts_with("ppt/slides/slide")
+                        && String::from_utf8_lossy(v).contains("<a:tbl>")
+                });
+            }
             result.native_editable_charts = charts > 0;
             if charts != workbooks {
                 return Err(invalid("pptx", "chart/workbook count mismatch"));
@@ -117,15 +157,303 @@ pub fn inspect_report(bytes: &[u8], manifest: &ReportManifest) -> ReportResult<R
                 "OOXML parts parse and every internal relationship resolves".into(),
                 "saved 16:9 dimensions and slide count verified".into(),
                 "DrawingML theme style matrix minimum entries verified".into(),
-                "chart parts reference embedded editable workbook data".into(),
+                match template {
+                    Template::Executive => "chart parts reference embedded editable workbook data",
+                    Template::SectionFirst => {
+                        "chart and workbook counts match and embedded worksheets parse"
+                    }
+                }
+                .into(),
             ]);
         }
+    }
+    if binding.is_some() {
+        result
+            .structural_checks
+            .push("embedded section-first artifact binding matches manifest".into());
     }
     result
         .structural_checks
         .push("byte size and SHA-256 match manifest".into());
     result.visual_review_required = true;
     Ok(result)
+}
+
+fn verify_binding(actual: Option<&str>, expected: Option<&str>) -> ReportResult<()> {
+    if actual != expected {
+        return Err(invalid("manifest", "embedded report binding mismatch"));
+    }
+    Ok(())
+}
+
+fn pdf_text(bytes: &[u8]) -> Option<String> {
+    if let Some(be) = bytes.strip_prefix(&[0xfe, 0xff]) {
+        let (pairs, remainder) = be.as_chunks::<2>();
+        if !remainder.is_empty() {
+            return None;
+        }
+        let units = pairs
+            .iter()
+            .copied()
+            .map(u16::from_be_bytes)
+            .collect::<Vec<_>>();
+        String::from_utf16(&units).ok()
+    } else {
+        String::from_utf8(bytes.to_vec()).ok()
+    }
+}
+
+fn core_keywords(data: &[u8]) -> ReportResult<Option<String>> {
+    use quick_xml::events::Event;
+    let mut reader = quick_xml::Reader::from_reader(data);
+    let mut keywords = None;
+    loop {
+        match reader.read_event().map_err(crate::OfficeError::from)? {
+            Event::Start(e) if e.name().as_ref() == "cp:keywords" => {
+                if keywords.is_some() {
+                    return Err(invalid("pptx", "duplicate core keywords"));
+                }
+                let text = reader
+                    .read_text(e.name())
+                    .map_err(crate::OfficeError::from)?;
+                keywords = Some(text.xml10_content().into_owned());
+            }
+            Event::Eof => return Ok(keywords),
+            _ => {}
+        }
+    }
+}
+
+type Attributes = BTreeMap<String, String>;
+
+fn xml_elements(data: &[u8], names: &[&str]) -> ReportResult<Vec<(String, Attributes)>> {
+    use quick_xml::{events::Event, name::ResolveResult};
+    let mut reader = quick_xml::NsReader::from_reader(data);
+    let mut elements = Vec::new();
+    loop {
+        match reader.read_event().map_err(crate::OfficeError::from)? {
+            Event::Start(e) | Event::Empty(e) => {
+                let qualified = e.name();
+                let name = qualified.as_ref();
+                if names.contains(&name) {
+                    let namespace = match name.split_once(':').map(|(prefix, _)| prefix) {
+                        Some("p") => "http://schemas.openxmlformats.org/presentationml/2006/main",
+                        Some("a") => "http://schemas.openxmlformats.org/drawingml/2006/main",
+                        Some("c") => "http://schemas.openxmlformats.org/drawingml/2006/chart",
+                        _ => "http://schemas.openxmlformats.org/package/2006/relationships",
+                    };
+                    let (actual, _) = reader.resolver().resolve_element(qualified);
+                    if !matches!(actual, ResolveResult::Bound(uri) if uri.as_ref() == namespace) {
+                        return Err(invalid("pptx", "unexpected OOXML element namespace"));
+                    }
+                    let mut attrs = Attributes::new();
+                    for attr in e.attributes() {
+                        let attr = attr.map_err(|_| invalid("pptx", "invalid attribute"))?;
+                        let name = attr.key.as_ref();
+                        if name == "r:id" {
+                            let (actual, _) = reader.resolver().resolve_attribute(attr.key);
+                            if !matches!(actual, ResolveResult::Bound(uri) if uri.as_ref() == pptx::REL)
+                            {
+                                return Err(invalid(
+                                    "pptx",
+                                    "unexpected OOXML relationship namespace",
+                                ));
+                            }
+                        }
+                        let value = attr
+                            .normalized_value(quick_xml::XmlVersion::Explicit1_0)
+                            .map_err(crate::OfficeError::from)?;
+                        attrs.insert(name.into(), value.into_owned());
+                    }
+                    elements.push((name.into(), attrs));
+                }
+            }
+            Event::Eof => return Ok(elements),
+            _ => {}
+        }
+    }
+}
+
+fn part<'a>(parts: &'a BTreeMap<String, Vec<u8>>, path: &str) -> ReportResult<&'a [u8]> {
+    parts
+        .get(path)
+        .map(Vec::as_slice)
+        .ok_or_else(|| invalid("pptx", &format!("missing {path}")))
+}
+
+fn relationships(
+    parts: &BTreeMap<String, Vec<u8>>,
+    path: &str,
+) -> ReportResult<BTreeMap<String, (String, String)>> {
+    let mut relations = BTreeMap::new();
+    for (_, mut attrs) in xml_elements(part(parts, path)?, &["Relationship"])? {
+        let mut required = |key| {
+            attrs
+                .remove(key)
+                .ok_or_else(|| invalid("pptx", "incomplete relationship"))
+        };
+        let (id, kind, target) = (required("Id")?, required("Type")?, required("Target")?);
+        if relations.insert(id, (kind, target)).is_some() {
+            return Err(invalid("pptx", "duplicate relationship ID"));
+        }
+    }
+    Ok(relations)
+}
+
+fn relationship_target<'a>(
+    relations: &'a BTreeMap<String, (String, String)>,
+    id: Option<&str>,
+    kind: &str,
+) -> ReportResult<&'a str> {
+    let (actual, target) = id
+        .and_then(|id| relations.get(id))
+        .ok_or_else(|| invalid("pptx", "unresolved native relationship ID"))?;
+    if actual
+        .strip_prefix(pptx::REL)
+        .and_then(|s| s.strip_prefix('/'))
+        != Some(kind)
+    {
+        return Err(invalid("pptx", "unexpected native relationship type"));
+    }
+    Ok(target)
+}
+
+fn inspect_section_deck(
+    parts: &BTreeMap<String, Vec<u8>>,
+    presentation: &[u8],
+    count: usize,
+    chart_count: usize,
+) -> ReportResult<bool> {
+    let notes_masters = xml_elements(presentation, &["p:notesMasterId"])?;
+    let [(_, master)] = notes_masters.as_slice() else {
+        return Err(invalid("pptx", "missing section notes master"));
+    };
+    let list = xml_elements(presentation, &["p:sldId", "p:sldSz"])?;
+    if count == 0 || list.len() != count + 1 {
+        return Err(invalid("pptx", "invalid section slide list"));
+    }
+    let (size, attrs) = &list[count];
+    if size != "p:sldSz"
+        || attrs.get("cx").map(String::as_str) != Some("12192000")
+        || attrs.get("cy").map(String::as_str) != Some("6858000")
+    {
+        return Err(invalid("pptx", "not 16:9 widescreen"));
+    }
+    let relations = relationships(parts, "ppt/_rels/presentation.xml.rels")?;
+    let master = relationship_target(
+        &relations,
+        master.get("r:id").map(String::as_str),
+        "notesMaster",
+    )?;
+    if master != "notesMasters/notesMaster1.xml" {
+        return Err(invalid("pptx", "section notes master mismatch"));
+    }
+    let mut attached_charts = BTreeSet::new();
+    let mut tables = false;
+    for (index, (element, attrs)) in list[..count].iter().enumerate() {
+        let number = index + 1;
+        let target =
+            relationship_target(&relations, attrs.get("r:id").map(String::as_str), "slide")?;
+        if element != "p:sldId" || target != format!("slides/slide{number}.xml") {
+            return Err(invalid("pptx", "section slide order mismatch"));
+        }
+        let rels = relationships(parts, &format!("ppt/slides/_rels/slide{number}.xml.rels"))?;
+        let notes = relationship_target(&rels, Some("rIdNotes"), "notesSlide")?;
+        if notes != format!("../notesSlides/notesSlide{number}.xml") {
+            return Err(invalid("pptx", "section notes relationship mismatch"));
+        }
+        let notes_rels = relationships(
+            parts,
+            &format!("ppt/notesSlides/_rels/notesSlide{number}.xml.rels"),
+        )?;
+        if relationship_target(&notes_rels, Some("rIdSlide"), "slide")? != format!("../{target}")
+            || relationship_target(&notes_rels, Some("rIdNotesMaster"), "notesMaster")?
+                != format!("../{master}")
+        {
+            return Err(invalid(
+                "pptx",
+                "section notes reverse relationship mismatch",
+            ));
+        }
+        let elements = xml_elements(
+            part(parts, &format!("ppt/{target}"))?,
+            &["p:sp", "a:t", "a:tbl", "c:chart", "a:hlinkClick"],
+        )?;
+        let has = |name| elements.iter().any(|(element, _)| element == name);
+        if !has("p:sp") || !has("a:t") {
+            return Err(invalid("pptx", "section slide has no editable heading"));
+        }
+        tables |= has("a:tbl");
+        for (element, attrs) in &elements {
+            match element.as_str() {
+                "a:hlinkClick" => {
+                    let target =
+                        relationship_target(&rels, attrs.get("r:id").map(String::as_str), "slide")?;
+                    let destination = target
+                        .strip_prefix("slide")
+                        .and_then(|s| s.strip_suffix(".xml"))
+                        .and_then(|s| s.parse::<usize>().ok());
+                    if !destination.is_some_and(|n| (1..=count).contains(&n))
+                        || attrs.get("action").map(String::as_str)
+                            != Some("ppaction://hlinksldjump")
+                    {
+                        return Err(invalid("pptx", "invalid section navigation"));
+                    }
+                }
+                "c:chart" => {
+                    let target =
+                        relationship_target(&rels, attrs.get("r:id").map(String::as_str), "chart")?;
+                    let chart = target
+                        .strip_prefix("../charts/")
+                        .and_then(|s| s.strip_suffix(".xml"))
+                        .filter(|s| {
+                            s.strip_prefix("chart")
+                                .is_some_and(|n| n.parse::<usize>().is_ok())
+                        })
+                        .ok_or_else(|| invalid("pptx", "invalid attached chart target"))?;
+                    if !attached_charts.insert(chart.to_owned()) {
+                        return Err(invalid("pptx", "duplicate chart reference"));
+                    }
+                    inspect_chart_binding(parts, chart)?;
+                }
+                _ => {}
+            }
+        }
+    }
+    if attached_charts.len() != chart_count {
+        return Err(invalid("pptx", "unattached chart part"));
+    }
+    Ok(tables)
+}
+
+fn inspect_chart_binding(parts: &BTreeMap<String, Vec<u8>>, name: &str) -> ReportResult<()> {
+    let elements = xml_elements(
+        part(parts, &format!("ppt/charts/{name}.xml"))?,
+        &["c:lineChart", "c:dispBlanksAs", "c:externalData"],
+    )?;
+    let [(line, _), (gap, gap_attrs), (data, data_attrs)] = elements.as_slice() else {
+        return Err(invalid(
+            "pptx",
+            "missing native line chart, gap mode or workbook link",
+        ));
+    };
+    if line != "c:lineChart"
+        || gap != "c:dispBlanksAs"
+        || data != "c:externalData"
+        || gap_attrs.get("val").map(String::as_str) != Some("gap")
+    {
+        return Err(invalid(
+            "pptx",
+            "missing native line chart, gap mode or workbook link",
+        ));
+    }
+    let rels = relationships(parts, &format!("ppt/charts/_rels/{name}.xml.rels"))?;
+    if relationship_target(&rels, data_attrs.get("r:id").map(String::as_str), "package")?
+        != format!("../embeddings/{name}.xlsx")
+    {
+        return Err(invalid("pptx", "attached chart workbook mismatch"));
+    }
+    Ok(())
 }
 
 const THEME_STYLE_LISTS: [&[u8]; 4] = [
@@ -344,7 +672,7 @@ fn read_package(
     Ok(parts)
 }
 
-fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
+fn inspect_html(html: &str, document_sha256: &str, binding: Option<&str>) -> ReportResult<()> {
     use quick_xml::events::Event;
     const CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
     const TAGS: &[&str] = &[
@@ -428,6 +756,9 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
     reader.config_mut().check_end_names = false;
     let mut in_head = false;
     let mut policy_seen = false;
+    let mut marker = None;
+    let mut first_content = None;
+    let mut next_is_first_content = false;
     let mut ids = BTreeSet::new();
     let mut targets = Vec::new();
     loop {
@@ -437,6 +768,13 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
                 if !TAGS.contains(&tag.as_str()) {
                     return Err(invalid("html", "unsupported or active HTML element"));
                 }
+                if next_is_first_content {
+                    first_content = Some(tag.clone());
+                    next_is_first_content = false;
+                }
+                if tag == "main" && first_content.is_none() {
+                    next_is_first_content = true;
+                }
                 if tag == "head" {
                     in_head = true;
                 }
@@ -445,6 +783,7 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
                 }
                 let mut equivalent = None;
                 let mut content = None;
+                let mut meta_name = None;
                 let mut names = BTreeSet::new();
                 for attr in e.attributes() {
                     let attr = attr.map_err(|_| invalid("html", "bad HTML attribute"))?;
@@ -478,10 +817,22 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
                         equivalent = Some(value);
                     } else if name == "content" {
                         content = Some(value);
+                    } else if name == "name" {
+                        meta_name = Some(value);
                     }
                 }
                 if tag == "a" && !names.contains("href") {
                     return Err(invalid("html", "report link is missing its target"));
+                }
+                if meta_name.as_deref() == Some(html::BINDING_META) {
+                    if tag != "meta" || !in_head || marker.is_some() {
+                        return Err(invalid("html", "invalid embedded report binding"));
+                    }
+                    marker = Some(
+                        content
+                            .clone()
+                            .ok_or_else(|| invalid("html", "missing embedded report binding"))?,
+                    );
                 }
                 if let Some(equivalent) = equivalent {
                     if tag != "meta"
@@ -521,6 +872,10 @@ fn inspect_html(html: &str, document_sha256: &str) -> ReportResult<()> {
     }
     if !policy_seen {
         return Err(invalid("html", "missing offline policy"));
+    }
+    verify_binding(marker.as_deref(), binding)?;
+    if binding.is_some() && first_content.as_deref() != Some("section") {
+        return Err(invalid("html", "first reading section is missing"));
     }
     Ok(())
 }

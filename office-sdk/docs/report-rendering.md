@@ -109,19 +109,41 @@ office-sdk/Cargo.toml --no-default-features --features report --test report_rend
 
 ## Template, limits and fonts
 
-`ReportRenderOptions::new(format)` selects the built-in `executive_v1` template.
-Other template names fail explicitly. This version uses a 960 × 540 point
-landscape print/deck layout, font-measured word wrapping, split long rows,
-repeated table headers and complete provenance pages. HTML is responsive with
-print styles, semantic headings/tables, SVG descriptions and text chart data.
-Text and table cells remain native editable DrawingML in PowerPoint. Charts
-contain native `c:lineChart` parts, cached numeric series, internal relationships
-and an editable embedded XLSX workbook. No slide screenshots or external links
-are used. Definitions, limitations, source versions and exact document/evidence
-bindings appear in slides and speaker notes.
+`ReportRenderOptions::new(format)` defaults to `executive_v1`. This template opens
+with a report overview and paginates the individual blocks. To select
+`section_first_v1`, set `options.template = SECTION_FIRST_TEMPLATE.into()`.
+Both templates accept the same schema-1 document and produce the same typed
+document digest. Unknown template IDs fail explicitly.
+
+With `section_first_v1`, supply at least one section and place your opening
+narrative first. PDF starts with that section, then presents report context and
+the remaining sections. The opening page reserves its footer for the full
+period and comparison. Document and revision IDs remain in the provenance
+pages and embedded manifest binding. Long tables repeat their headers on later
+pages, and internal links reach the exact target page and row. HTML starts with the same
+section, followed by context, in a single responsive document with printable
+styles and internal anchors. Both carry complete chart data, missing observations,
+definitions, limitations and provenance.
+
+PowerPoint puts each section on exactly one editable 16:9 slide, in input
+order. Period and comparison appear on each slide. The layout measures text
+and cells, and can arrange consecutive charts in a compact grid. Each chart
+is a native line chart linked to an editable workbook with the full
+observation labels and numeric data. Blank observations remain gaps in the
+chart and workbook. Long or numerous category labels stay available in chart
+data and speaker notes when the visible axis has insufficient space. Long
+series names can appear in an editable color key on the slide. Speaker
+notes also carry the full report context, definitions, limitations, source
+revisions and document/evidence hashes. When a full native table exceeds the
+slide, a native preview indicates how many rows are visible and the notes
+retain every header, row, cell and row anchor. An internal row link jumps to
+the slide with that table or its notes. When compact layouts and previews
+still leave content that cannot fit, rendering returns the section ID and
+asks the caller to split the content into additional sections.
 
 Hard limits (callers may reduce them) are 2 MiB serialized input, 32 MiB output,
-256 pages/slides, 10,000 table rows and 1,000 chart points in total. Each text
+256 pages/slides, 10,000 table rows and 1,000 chart points in total. Continuous
+section-first HTML has no page count and uses the byte and content limits. Each text
 field is at most 20,000 characters; identity fields are at most 256 characters.
 There are at most 128 sections, 256 blocks per section, 8 table columns and 8
 chart series. Axis and band values must be finite, increasing/in-range where
@@ -129,8 +151,10 @@ applicable. Nonrectangular tables, incompatible point counts, XML-illegal
 controls and bidi override characters fail before rendering. Oversized titles
 or table headers that cannot fit safely also fail rather than clip. PDF charts
 include a measured color key for each series; legends that exceed the available
-area fail explicitly. Identity footers wrap within three PDF lines or two PPTX
-lines and fail if their complete binding cannot fit. The SDK
+area fail explicitly. The executive template limits identity footers to
+three PDF lines or two PPTX lines. The section-first PDF opening footer
+fits up to four measured lines of context and fails explicitly when that
+context cannot fit. The SDK
 never truncates a source row or substitutes zero for missing data.
 
 Noto Sans Regular is bundled with SIL OFL 1.1 license and pinned source metadata
@@ -155,7 +179,14 @@ not grant rights to embed them: the caller must supply an appropriate license.
 `render_report` invokes `inspect_report` before returning. Inspection verifies
 hash/size and format metadata, parses the PDF/page count, checks the offline
 HTML binding, and parses the PPTX XML, all internal relationship targets,
-widescreen geometry, slide count and embedded chart workbooks. The inspector
+widescreen geometry, slide count and embedded chart workbooks. For
+`section_first_v1`, all three formats also carry an embedded binding for the
+manifest's template, SDK, source identity, hashes, format, count and layout
+font. The inspector verifies the section-first HTML reading order and the
+ordered PPTX slide, chart, workbook, notes and navigation references. Existing
+`executive_v1` artifacts continue to use their historical inspection profile.
+An embedded binding is an integrity check against the supplied manifest.
+The inspector
 bounds archive parts/expanded bytes and rejects external links/DTD. Its static
 HTML profile rejects comments, CDATA and case-insensitive duplicate attributes
 to avoid differences between XML tokenization and browser parsing. It is a

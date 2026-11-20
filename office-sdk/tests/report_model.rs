@@ -25,3 +25,13 @@ fn model_validation_rejects_mismatched_schema_and_oversized_source() {
         Err(ReportError::LimitExceeded(_))
     ));
 }
+
+#[test]
+fn section_first_fixture_retains_its_schema_one_typed_digest() {
+    let document: ReportDocument =
+        serde_json::from_str(include_str!("fixtures/section-first-report.json")).unwrap();
+    assert_eq!(
+        report_document_sha256(&document).unwrap(),
+        "b1057dbb29f8eb1cb8d5645e9bdd33819a864abd6f8a75b95a8d89bff83ee048"
+    );
+}

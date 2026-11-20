@@ -5,26 +5,39 @@ use std::fmt::Write;
 fn e(s: &str) -> String {
     xml(s)
 }
-pub(crate) fn render(d: &ReportDocument, digest: &str, font: &[u8]) -> String {
-    let mut h = format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'\"><title>{}</title><style>{}</style></head><body><main><header><p class=\"eyebrow\">Report · {}</p><h1>{}</h1><p>{}</p><dl><dt>Period</dt><dd>{}</dd><dt>Scope</dt><dd>{}</dd><dt>Comparison</dt><dd>{}</dd></dl></header>",
-        e(&d.title),
-        &format!(
-            "{}@font-face{{font-family:Report;src:url(data:font/ttf;base64,{})}}body{{font-family:Report,system-ui,sans-serif}}",
-            CSS,
-            base64::engine::general_purpose::STANDARD.encode(font)
-        ),
-        e(&d.report_type),
-        e(&d.title),
-        e(&d.subtitle),
-        e(&d.period),
-        e(&d.scope),
-        e(&d.comparison)
+pub(super) const BINDING_META: &str = "office-report-binding";
+
+pub(crate) fn render(
+    d: &ReportDocument,
+    digest: &str,
+    font: &[u8],
+    binding: Option<&str>,
+) -> String {
+    let mut h = String::from(
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'">"#,
     );
-    for section in &d.sections {
+    if let Some(binding) = binding {
+        write!(h, r#"<meta name="{BINDING_META}" content="{binding}">"#).unwrap();
+    }
+    write!(
+        h,
+        "<title>{}</title><style>{}@font-face{{font-family:Report;src:url(data:font/ttf;base64,{})}}body{{font-family:Report,system-ui,sans-serif}}</style></head><body><main>",
+        e(&d.title),
+        CSS,
+        base64::engine::general_purpose::STANDARD.encode(font)
+    ).unwrap();
+    if binding.is_none() {
+        context(&mut h, d, "h1");
+    }
+    for (index, section) in d.sections.iter().enumerate() {
+        let heading = if binding.is_some() && index == 0 {
+            "h1"
+        } else {
+            "h2"
+        };
         write!(
             h,
-            "<section id=\"{}\"><h2>{}</h2>",
+            "<section id=\"{}\"><{heading}>{}</{heading}>",
             e(&section.id),
             e(&section.title)
         )
@@ -88,6 +101,9 @@ pub(crate) fn render(d: &ReportDocument, digest: &str, font: &[u8]) -> String {
             }
         }
         h.push_str("</section>");
+        if binding.is_some() && index == 0 {
+            context(&mut h, d, "h2");
+        }
     }
     h.push_str("<section><h2>Definitions</h2><dl>");
     for v in &d.definitions {
@@ -97,13 +113,26 @@ pub(crate) fn render(d: &ReportDocument, digest: &str, font: &[u8]) -> String {
     for l in &d.limitations {
         write!(h, "<p>{}</p>", e(l)).unwrap();
     }
-    write!(h,"</section><footer><h2>Provenance</h2><p>Document: {} · Revision: {}</p><p>Document SHA-256: {}</p><p>Evidence SHA-256: {}</p><p>Template: {}</p><ul>",e(&d.document_id),e(&d.revision),digest,e(&d.provenance.evidence_sha256),REPORT_TEMPLATE).unwrap();
+    write!(h,"</section><footer><h2>Provenance</h2><p>Document: {} · Revision: {}</p><p>Document SHA-256: {}</p><p>Evidence SHA-256: {}</p><p>Template: {}</p><ul>",e(&d.document_id),e(&d.revision),digest,e(&d.provenance.evidence_sha256),if binding.is_some() { SECTION_FIRST_TEMPLATE } else { REPORT_TEMPLATE }).unwrap();
     for s in &d.provenance.sources {
         write!(h, "<li>{} @ {}</li>", e(&s.id), e(&s.revision)).unwrap();
     }
     h.push_str("</ul></footer></main></body></html>");
     h
 }
+fn context(h: &mut String, d: &ReportDocument, heading: &str) {
+    write!(
+        h,
+        "<header><p class=\"eyebrow\">Report · {}</p><{heading}>{}</{heading}><p>{}</p><dl><dt>Period</dt><dd>{}</dd><dt>Scope</dt><dd>{}</dd><dt>Comparison</dt><dd>{}</dd></dl></header>",
+        e(&d.report_type),
+        e(&d.title),
+        e(&d.subtitle),
+        e(&d.period),
+        e(&d.scope),
+        e(&d.comparison)
+    ).unwrap();
+}
+
 fn table_html(h: &mut String, t: &ReportTable) {
     table_html_anchors(h, t, None);
 }

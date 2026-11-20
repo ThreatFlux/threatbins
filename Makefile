@@ -14,8 +14,10 @@ ci: fmt-check lint check test docs audit msrv-check
 validate-pptx:
 	cargo +$(RUST_STABLE) run --manifest-path office-sdk/Cargo.toml --example report_render --all-features --locked -- office-sdk/tests/fixtures/executive-report.json $(PPTX_INTEROP_OUTPUT)
 	cargo +$(RUST_STABLE) run --manifest-path office-sdk/Cargo.toml --example report_render --all-features --locked -- office-sdk/tests/fixtures/navigation-report.json $(PPTX_INTEROP_OUTPUT)/navigation
+	cargo +$(RUST_STABLE) run --manifest-path office-sdk/Cargo.toml --example report_render --all-features --locked -- office-sdk/tests/fixtures/section-first-report.json $(PPTX_INTEROP_OUTPUT)/section-first section_first_v1
+	cargo +$(RUST_STABLE) run --manifest-path office-sdk/Cargo.toml --example report_render --all-features --locked -- office-sdk/tests/fixtures/dense-section-first-report.json $(PPTX_INTEROP_OUTPUT)/section-first-dense section_first_v1
 	cd tools/pptx-validation && dotnet restore --locked-mode
-	cd tools/pptx-validation && dotnet run --configuration Release --no-restore -- "$(abspath $(PPTX_INTEROP_OUTPUT))/report.pptx" "$(abspath $(PPTX_INTEROP_OUTPUT))/navigation/report.pptx"
+	cd tools/pptx-validation && dotnet run --configuration Release --no-restore -- "$(abspath $(PPTX_INTEROP_OUTPUT))/report.pptx" "$(abspath $(PPTX_INTEROP_OUTPUT))/navigation/report.pptx" "$(abspath $(PPTX_INTEROP_OUTPUT))/section-first/report.pptx" "$(abspath $(PPTX_INTEROP_OUTPUT))/section-first-dense/report.pptx"
 
 fmt-check:
 	@set -eu; for manifest in $(MANIFESTS); do cargo +$(RUST_STABLE) fmt --manifest-path $$manifest --all -- --check; done

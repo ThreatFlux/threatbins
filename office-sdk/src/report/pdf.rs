@@ -5,10 +5,18 @@ use printpdf::{
     PdfSaveOptions, Point, Polygon, PolygonRing, Pt, Rgb, TextItem, WindingOrder,
 };
 
-pub(crate) fn render(d: &ReportDocument, pages: &[Page], font: &[u8]) -> ReportResult<Vec<u8>> {
+pub(crate) fn render(
+    d: &ReportDocument,
+    pages: &[Page],
+    font: &[u8],
+    binding: Option<&str>,
+) -> ReportResult<Vec<u8>> {
     let parsed = ParsedFont::from_bytes(font, 0, &mut Vec::new())
         .ok_or_else(|| invalid("font_data", "font cannot be embedded in PDF"))?;
     let mut pdf = PdfDocument::new(&d.title);
+    if let Some(binding) = binding {
+        pdf.metadata.info.subject = binding.into();
+    }
     let handle = PdfFontHandle::External(pdf.add_font(&parsed));
     let metrics = FontMetrics::new(font)?;
     let mut result = Vec::new();
@@ -123,29 +131,43 @@ pub(crate) fn render(d: &ReportDocument, pages: &[Page], font: &[u8]) -> ReportR
             }
             PageBody::Chart(c) => chart(&mut ops, &handle, c, &metrics)?,
         }
-        let footer = format!(
-            "{} / {}  ·  {}  ·  revision {}",
-            i + 1,
-            pages.len(),
-            d.document_id,
-            d.revision
-        );
-        // The complete IDs are also in the provenance pages. Reject enormous
-        // footer fields rather than silently truncate their visible binding.
-        let footer_lines = metrics.wrap(&footer, 8.0, BODY_WIDTH)?;
-        if footer_lines.len() > 3 {
-            return Err(invalid(
-                "document_id/revision",
-                "page footer must fit within three lines",
-            ));
-        }
+        let page_number = format!("{} / {}", i + 1, pages.len());
+        let (footer_lines, baseline) = if binding.is_some() {
+            if i == 0 {
+                // Reserve the first footer for context. The complete document and
+                // revision are in the provenance pages and embedded binding.
+                let context = metrics.wrap(&period_comparison(d), 8.0, BODY_WIDTH)?;
+                if context.len() > 4 {
+                    return Err(invalid(
+                        "period/comparison",
+                        "first-page PDF context exceeds four lines; supply shorter display values",
+                    ));
+                }
+                (context, 499.0)
+            } else {
+                (vec![page_number], 505.0)
+            }
+        } else {
+            let footer = format!(
+                "{page_number}  ·  {}  ·  revision {}",
+                d.document_id, d.revision
+            );
+            let lines = metrics.wrap(&footer, 8.0, BODY_WIDTH)?;
+            if lines.len() > 3 {
+                return Err(invalid(
+                    "document_id/revision",
+                    "page footer must fit within three lines",
+                ));
+            }
+            (lines, 505.0)
+        };
         for (n, l) in footer_lines.iter().enumerate() {
             text(
                 &mut ops,
                 &handle,
                 l,
                 LEFT,
-                505.0 + n as f64 * 10.0,
+                baseline + n as f64 * 10.0,
                 8.0,
                 "525252",
             );

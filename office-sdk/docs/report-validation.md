@@ -44,3 +44,31 @@ script shaping is explicitly unavailable, and such text fails validation.
 Rerun `report_render` to obtain artifacts and manifests; use `inspect_report`
 for bounded structural inspection. Neither a manifest nor successful rendering
 permits application adoption without the host's exact approval/source bindings.
+
+## Section-first fixtures and historical compatibility
+
+`tests/fixtures/section-first-report.json` exercises an opening narrative, long
+chart labels, a missing observation, a dense native table, paired charts on
+one slide, definitions and internal section and row links.
+`tests/fixtures/dense-section-first-report.json` has a three-chart trend
+section and a 24-row anchored table. Tests inspect the actual chart frames,
+workbook values and gaps, table preview, complete notes and internal links.
+The navigation fixture checks late appendix rows and destinations in PDF,
+HTML and PowerPoint notes. A separate overflow case verifies the error for
+source prose that exceeds one slide.
+
+`make validate-pptx` renders both section-first fixtures alongside the
+executive and navigation fixtures for Microsoft Open XML validation. The
+hosted Rust workflow also generates all three default-template artifacts
+from the pinned 0.4.0 source and checks that the candidate inspector accepts
+the original bytes and manifests with a matching schema-1 typed digest.
+
+To render the section-first fixture from the repository root:
+
+```sh
+cargo run --manifest-path office-sdk/Cargo.toml --no-default-features --features report --locked --example report_render -- office-sdk/tests/fixtures/section-first-report.json office-sdk/target/section-first section_first_v1
+```
+
+Desktop PowerPoint fit, editing and persistence remain visual acceptance
+checks. The test suite checks the native parts, embedded cells and workbook
+relationships before a host opens or edits the files.
