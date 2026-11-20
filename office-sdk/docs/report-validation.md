@@ -55,7 +55,10 @@ section and a 24-row anchored table. Tests inspect the actual chart frames,
 workbook values and gaps, table preview, complete notes and internal links.
 The navigation fixture checks late appendix rows and destinations in PDF,
 HTML and PowerPoint notes. A separate overflow case verifies the error for
-source prose that exceeds one slide.
+source prose that exceeds one slide. Section-first regressions also cover
+opening HTML landmark and chart headings, malformed PowerPoint chart trees,
+missing heading and notes-body text, long PDF context, and the compact table
+fit boundary.
 
 `make validate-pptx` renders both section-first fixtures alongside the
 executive and navigation fixtures for Microsoft Open XML validation. The

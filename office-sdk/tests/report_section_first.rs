@@ -522,6 +522,334 @@ fn rehashed_artifacts_must_still_satisfy_section_first_structure() {
 }
 
 #[test]
+fn opening_chart_uses_a_second_level_heading_only_in_section_first_html() {
+    let mut document = fixture();
+    let chart = document
+        .sections
+        .iter()
+        .flat_map(|section| &section.blocks)
+        .find(|block| matches!(block, ReportBlock::Chart { .. }))
+        .unwrap()
+        .clone();
+    let ReportBlock::Chart { chart } = chart else {
+        unreachable!()
+    };
+    let mut opening = chart.clone();
+    opening.title = "Opening observations".into();
+    document.sections[0]
+        .blocks
+        .insert(0, ReportBlock::Chart { chart: opening });
+    let candidate = render_report(&document, &options(ReportFormat::Html)).unwrap();
+    let output = std::str::from_utf8(&candidate.bytes).unwrap();
+    assert!(output.contains("<figcaption><h2>Opening observations</h2>"));
+    assert!(output.contains(&format!("<figcaption><h3>{}</h3>", chart.title)));
+    let skipped = output.replacen(
+        "<h2>Opening observations</h2>",
+        "<h3>Opening observations</h3>",
+        1,
+    );
+    assert_invalid_artifact(
+        &candidate,
+        skipped.as_bytes(),
+        "incorrect chart heading level",
+    );
+
+    let old = render_report(&document, &ReportRenderOptions::new(ReportFormat::Html)).unwrap();
+    assert!(
+        std::str::from_utf8(&old.bytes)
+            .unwrap()
+            .contains("<figcaption><h3>Opening observations</h3>")
+    );
+}
+
+#[test]
+fn section_first_html_requires_an_opening_section_directly_inside_main() {
+    let report = render_report(&fixture(), &options(ReportFormat::Html)).unwrap();
+    let output = std::str::from_utf8(&report.bytes).unwrap();
+    assert!(output.contains("<main><section id=\"bottom-line\"><h1>Bottom line</h1>"));
+    assert!(inspect_report(&report.bytes, &report.manifest).is_ok());
+    let escaped =
+        output
+            .replacen("<main>", "<main></main>", 1)
+            .replacen("</footer></main>", "</footer>", 1);
+    assert_invalid_artifact(
+        &report,
+        escaped.as_bytes(),
+        "first reading section is missing",
+    );
+    let prior = output.replacen("<main>", "<main>&lt;section&gt;", 1);
+    assert_invalid_artifact(
+        &report,
+        prior.as_bytes(),
+        "text precedes the first reading section",
+    );
+    let misplaced = output.replacen("<main>", "<main><div>", 1).replacen(
+        "</footer></main>",
+        "</footer></div></main>",
+        1,
+    );
+    assert_invalid_artifact(
+        &report,
+        misplaced.as_bytes(),
+        "first reading section is missing",
+    );
+    let outside = output.replacen("</main>", "</main><section><h2>Outside</h2></section>", 1);
+    assert_invalid_artifact(
+        &report,
+        outside.as_bytes(),
+        "report section is outside main",
+    );
+}
+
+#[test]
+fn native_heading_must_be_meaningful_text_in_the_heading_textbox() {
+    let document: ReportDocument = serde_json::from_str(DENSE).unwrap();
+    let report = render_report(&document, &options(ReportFormat::Pptx)).unwrap();
+    let path = "ppt/slides/slide3.xml";
+    let slide = xml(&report.bytes, path);
+    assert!(slide.contains("id=\"2\" name=\"Report text 2\""));
+    assert!(slide.contains("<a:tbl>"));
+    assert!(
+        inspect_report(&report.bytes, &report.manifest)
+            .unwrap()
+            .native_editable_text
+    );
+    for blank in ["", "   ", "&#x200b;"] {
+        let bytes = replace_part(
+            &report.bytes,
+            path,
+            ">Coverage by work area</a:t>",
+            &format!(">{blank}</a:t>"),
+        );
+        assert_invalid_artifact(&report, &bytes, "section slide has no editable heading");
+    }
+    let bytes = replace_part(
+        &report.bytes,
+        path,
+        r#"<p:cNvSpPr txBox="1"/>"#,
+        "<p:cNvSpPr/>",
+    );
+    assert_invalid_artifact(&report, &bytes, "section slide has no editable heading");
+}
+
+#[test]
+fn preview_requires_the_complete_record_in_the_native_notes_body() {
+    let mut document: ReportDocument = serde_json::from_str(DENSE).unwrap();
+    let ReportBlock::AnchoredTable { table, .. } = &mut document.sections[2].blocks[0] else {
+        unreachable!()
+    };
+    table.caption = "Recorded work areas & measurements\r\nComplete selection".into();
+    table.rows[23][0] = "Final dispatch & staging corridor\r\nExtended detail".into();
+    let report = render_report(&document, &options(ReportFormat::Pptx)).unwrap();
+    assert!(inspect_report(&report.bytes, &report.manifest).is_ok());
+    let path = "ppt/notesSlides/notesSlide3.xml";
+    let body = xml(&report.bytes, path);
+    assert!(body.contains("Final dispatch &amp; staging corridor"));
+    let wrong_placeholder = replace_part(
+        &report.bytes,
+        path,
+        r#"p:ph type="body" idx="1""#,
+        r#"p:ph type="ctrTitle" idx="1""#,
+    );
+    assert_invalid_artifact(
+        &report,
+        &wrong_placeholder,
+        "table preview requires a unique notes body",
+    );
+
+    let start = body.find("<a:p>").unwrap();
+    let end = body.rfind("</a:p>").unwrap() + "</a:p>".len();
+    let empty_notes = replace_part(&report.bytes, path, &body[start..end], "<a:p/>");
+    assert_invalid_artifact(
+        &report,
+        &empty_notes,
+        "table preview does not match its complete table",
+    );
+    let missing_value = replace_part(
+        &report.bytes,
+        path,
+        "Area: Final dispatch &amp; staging corridor",
+        "Area: ",
+    );
+    assert_invalid_artifact(
+        &report,
+        &missing_value,
+        "table preview does not match its complete table",
+    );
+    let removed_marker = replace_part(
+        &report.bytes,
+        "ppt/slides/slide3.xml",
+        "office-report-table-preview-v1:",
+        "unused-preview-marker:",
+    );
+    assert_invalid_artifact(
+        &report,
+        &removed_marker,
+        "table preview does not match its complete table",
+    );
+}
+
+#[test]
+fn section_chart_requires_the_chart_plot_and_line_hierarchy() {
+    let report = render_report(&fixture(), &options(ReportFormat::Pptx)).unwrap();
+    let path = "ppt/charts/chart1.xml";
+    let chart = xml(&report.bytes, path);
+    assert!(chart.contains("<c:plotArea><c:layout/><c:lineChart>"));
+    assert!(
+        inspect_report(&report.bytes, &report.manifest)
+            .unwrap()
+            .native_editable_charts
+    );
+
+    let outside_plot = replace_part(&report.bytes, path, "</c:valAx></c:plotArea>", "</c:valAx>");
+    let outside_plot = replace_part(
+        &outside_plot,
+        path,
+        "<c:plotArea><c:layout/>",
+        "<c:plotArea><c:layout/></c:plotArea>",
+    );
+    assert_invalid_artifact(
+        &report,
+        &outside_plot,
+        "unexpected native chart element position",
+    );
+    let outside_chart = replace_part(
+        &report.bytes,
+        path,
+        r#"<c:dispBlanksAs val="gap"/></c:chart>"#,
+        r#"</c:chart><c:dispBlanksAs val="gap"/>"#,
+    );
+    assert_invalid_artifact(
+        &report,
+        &outside_chart,
+        "unexpected native chart element position",
+    );
+    let nested_workbook = replace_part(
+        &report.bytes,
+        path,
+        "</c:chart><c:externalData",
+        "<c:externalData",
+    );
+    let nested_workbook = replace_part(
+        &nested_workbook,
+        path,
+        "</c:externalData></c:chartSpace>",
+        "</c:externalData></c:chart></c:chartSpace>",
+    );
+    assert_invalid_artifact(
+        &report,
+        &nested_workbook,
+        "unexpected native chart element position",
+    );
+    let foreign_plot = replace_part(
+        &report.bytes,
+        path,
+        "<c:plotArea>",
+        r#"<c:plotArea xmlns:c="urn:other">"#,
+    );
+    assert_invalid_artifact(&report, &foreign_plot, "unexpected OOXML element namespace");
+}
+
+#[test]
+fn long_pdf_context_preserves_a_labeled_preview_and_unabridged_continuation() {
+    for long_period in [true, false] {
+        let mut document = fixture();
+        let long_value = [
+            "Anchor for this selected interval",
+            "Recorded interval alpha",
+            "Recorded interval beta",
+            "Recorded interval gamma",
+            "Recorded interval delta",
+            "Ending reference interval",
+        ]
+        .join("\n");
+        let (long_label, ordinary) = if long_period {
+            document.period = long_value.clone();
+            document.comparison = "Ordinary comparison\nwith equivalent scope".into();
+            ("Period", "with equivalent scope")
+        } else {
+            document.comparison = long_value.clone();
+            document.period = "Ordinary period\nwith a complete date".into();
+            ("Comparison", "with a complete date")
+        };
+        let report = render_report(&document, &options(ReportFormat::Pdf)).unwrap();
+        let pdf = lopdf::Document::load_mem(&report.bytes).unwrap();
+        let first = pdf.extract_text(&[1]).unwrap();
+        assert!(first.contains(&format!(
+            "{long_label}: Anchor for this selected interval ..."
+        )));
+        assert!(first.contains(ordinary));
+        assert!(first.contains("Full values continue in Report context."));
+        assert!(!first.contains("Ending reference interval"));
+        let context = pdf
+            .get_pages()
+            .into_keys()
+            .skip(1)
+            .map(|page| pdf.extract_text(&[page]).unwrap())
+            .find(|page| page.contains("Report context"))
+            .unwrap();
+        assert_in_order(
+            &context,
+            &format!("{long_label}: Anchor for this selected interval"),
+            "Ending reference interval",
+        );
+        for line in long_value.lines() {
+            assert!(context.contains(line), "context lost {line}");
+        }
+    }
+    let ordinary = render_report(&fixture(), &options(ReportFormat::Pdf)).unwrap();
+    let first = lopdf::Document::load_mem(&ordinary.bytes)
+        .unwrap()
+        .extract_text(&[1])
+        .unwrap();
+    assert!(first.contains("Period: April to June 2026"));
+    assert!(first.contains("Comparison: Previous period, equivalent scope"));
+    assert!(!first.contains("Full values continue"));
+}
+
+#[test]
+fn compact_slide_fits_a_412_point_table_and_previews_only_after_overflow() {
+    let mut document = fixture();
+    document.sections = vec![ReportSection {
+        id: "measured".into(),
+        title: "Recorded results".into(),
+        blocks: vec![ReportBlock::Table {
+            table: ReportTable {
+                caption: String::new(),
+                headers: vec!["Observation".into()],
+                rows: (1..=18)
+                    .map(|row| vec![format!("Recorded result {row}")])
+                    .collect(),
+            },
+        }],
+    }];
+    let ReportBlock::Table { table } = &mut document.sections[0].blocks[0] else {
+        unreachable!()
+    };
+    table.rows[0][0].push_str("\nfirst measured detail");
+    let report = render_report(&document, &options(ReportFormat::Pptx)).unwrap();
+    let slide = xml(&report.bytes, "ppt/slides/slide1.xml");
+    assert_eq!(slide.matches("<a:tr ").count(), 19);
+    assert!(slide.contains("Recorded result 18"));
+    assert!(!slide.contains("Complete table in speaker notes."));
+
+    let ReportBlock::Table { table } = &mut document.sections[0].blocks[0] else {
+        unreachable!()
+    };
+    table.rows[1][0].push_str("\nsecond measured detail");
+    let report = render_report(&document, &options(ReportFormat::Pptx)).unwrap();
+    let slide = xml(&report.bytes, "ppt/slides/slide1.xml");
+    assert!(slide.contains("of 18 rows shown. Complete table in speaker notes."));
+    let notes = xml(&report.bytes, "ppt/notesSlides/notesSlide1.xml");
+    assert!(notes.contains("Observation: Recorded result 18"));
+}
+
+fn assert_invalid_artifact(report: &RenderedReport, bytes: &[u8], expected: &str) {
+    let error = inspect_report(bytes, &rebind_bytes(report, bytes)).unwrap_err();
+    assert!(error.to_string().contains(expected), "{error}");
+}
+
+#[test]
 #[ignore = "requires artifacts generated from the pinned previous SDK in CI"]
 fn previous_release_artifacts_remain_readable() {
     let output = std::path::PathBuf::from(std::env::var_os("OFFICE_REPORT_BASELINE_DIR").unwrap());

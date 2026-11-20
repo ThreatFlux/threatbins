@@ -1,5 +1,7 @@
 use super::*;
 
+pub(super) const REPORT_CONTEXT_TITLE: &str = "Report context";
+
 pub(crate) const WIDTH: f64 = 960.0;
 pub(crate) const HEIGHT: f64 = 540.0;
 pub(crate) const LEFT: f64 = 40.0;
@@ -274,7 +276,7 @@ pub(crate) fn paginate(
             page.anchors.insert(section.id.clone(), 24.0);
         }
         if template == Template::SectionFirst && index == 0 {
-            add_text(&mut pages, "Report context", &intro, m, &common, max)?;
+            add_text(&mut pages, REPORT_CONTEXT_TITLE, &intro, m, &common, max)?;
         }
     }
     if !d.definitions.is_empty() {

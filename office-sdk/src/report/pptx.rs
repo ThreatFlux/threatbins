@@ -151,6 +151,7 @@ pub(super) fn render_sections(
         let id = deck.add_slide("", &[])?;
         deck.add_slide_notes(&id, &slide_layout.notes)?;
         let mut shapes = String::new();
+        let mut previews = slide_layout.table_previews.iter();
         for (item_index, (frame, item)) in slide_layout.items.iter().enumerate() {
             let shape = item_index as u32 + 2;
             match item {
@@ -189,6 +190,27 @@ pub(super) fn render_sections(
                         |row| table.row_height(row),
                     ));
                 }
+                Item::TablePreview(lines) => {
+                    let description = previews
+                        .next()
+                        .ok_or_else(|| invalid("pptx", "missing table preview binding"))?;
+                    let label = text_frame(
+                        shape,
+                        lines,
+                        *frame,
+                        section::TABLE_PREVIEW_SIZE,
+                        "172033",
+                        section::line_height(section::TABLE_PREVIEW_SIZE),
+                    );
+                    shapes.push_str(&label.replacen(
+                        &format!(r#"name="Report text {shape}""#),
+                        &format!(
+                            r#"name="Report table preview" descr="{}""#,
+                            xml(description)
+                        ),
+                        1,
+                    ));
+                }
                 Item::Chart {
                     chart,
                     show_categories,
@@ -208,6 +230,9 @@ pub(super) fn render_sections(
                     });
                 }
             }
+        }
+        if previews.next().is_some() {
+            return Err(invalid("pptx", "unused table preview binding"));
         }
         deck.slides.insert(id, slide(&shapes));
     }

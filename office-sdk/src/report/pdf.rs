@@ -136,14 +136,7 @@ pub(crate) fn render(
             if i == 0 {
                 // Reserve the first footer for context. The complete document and
                 // revision are in the provenance pages and embedded binding.
-                let context = metrics.wrap(&period_comparison(d), 8.0, BODY_WIDTH)?;
-                if context.len() > 4 {
-                    return Err(invalid(
-                        "period/comparison",
-                        "first-page PDF context exceeds four lines; supply shorter display values",
-                    ));
-                }
-                (context, 499.0)
+                (opening_context(d, &metrics)?, 499.0)
             } else {
                 (vec![page_number], 505.0)
             }
@@ -187,6 +180,52 @@ pub(crate) fn render(
     }
     Ok(bytes)
 }
+fn opening_context(document: &ReportDocument, metrics: &FontMetrics) -> ReportResult<Vec<String>> {
+    const SIZE: f64 = 8.0;
+    let full = metrics.wrap(&period_comparison(document), SIZE, BODY_WIDTH)?;
+    if full.len() <= 4 {
+        return Ok(full);
+    }
+
+    let fields = [
+        ("Period", &document.period),
+        ("Comparison", &document.comparison),
+    ];
+    let [period, comparison] =
+        fields.map(|(label, value)| metrics.wrap(&format!("{label}: {value}"), SIZE, BODY_WIDTH));
+    let wrapped = [period?, comparison?];
+    if wrapped.iter().map(Vec::len).sum::<usize>() <= 4 {
+        return Ok(wrapped.into_iter().flatten().collect());
+    }
+
+    let mut lines = Vec::new();
+    for ((label, value), complete) in fields.into_iter().zip(wrapped) {
+        if complete.len() <= 2 {
+            lines.extend(complete);
+            continue;
+        }
+        let suffix = " ...";
+        let mut excerpt = format!("{label}: ");
+        let mut remaining =
+            BODY_WIDTH - metrics.width(&excerpt, SIZE)? - metrics.width(suffix, SIZE)?;
+        for character in value
+            .trim_start()
+            .chars()
+            .take_while(|c| !matches!(c, '\n' | '\r'))
+        {
+            let width = metrics.width(character.encode_utf8(&mut [0; 4]), SIZE)?;
+            if width > remaining {
+                break;
+            }
+            excerpt.push(if character == '\t' { ' ' } else { character });
+            remaining -= width;
+        }
+        lines.push(format!("{}{suffix}", excerpt.trim_end()));
+    }
+    lines.push(format!("Full values continue in {REPORT_CONTEXT_TITLE}."));
+    Ok(lines)
+}
+
 fn point(x: f64, y: f64) -> Point {
     Point {
         x: Pt(x as f32),

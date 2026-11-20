@@ -117,12 +117,14 @@ document digest. Unknown template IDs fail explicitly.
 
 With `section_first_v1`, supply at least one section and place your opening
 narrative first. PDF starts with that section, then presents report context and
-the remaining sections. The opening page reserves its footer for the full
-period and comparison. Document and revision IDs remain in the provenance
-pages and embedded manifest binding. Long tables repeat their headers on later
-pages, and internal links reach the exact target page and row. HTML starts with the same
-section, followed by context, in a single responsive document with printable
-styles and internal anchors. Both carry complete chart data, missing observations,
+the remaining sections. The opening footer shows the full period and
+comparison when they fit. For longer values it shows labeled excerpts and
+points to the unabridged values in Report context. Document and revision IDs
+remain in the provenance pages and embedded manifest binding. Long tables
+repeat their headers on later pages, and internal links reach the exact target
+page and row. HTML starts with the same section inside its main landmark,
+followed by context, in a responsive document with printable styles and
+internal anchors. Both carry complete chart data, missing observations,
 definitions, limitations and provenance.
 
 PowerPoint puts each section on exactly one editable 16:9 slide, in input
@@ -153,9 +155,8 @@ or table headers that cannot fit safely also fail rather than clip. PDF charts
 include a measured color key for each series; legends that exceed the available
 area fail explicitly. The executive template limits identity footers to
 three PDF lines or two PPTX lines. The section-first PDF opening footer
-fits up to four measured lines of context and fails explicitly when that
-context cannot fit. The SDK
-never truncates a source row or substitutes zero for missing data.
+uses up to four measured lines. The SDK retains all source rows and keeps
+missing data distinct from zero.
 
 Noto Sans Regular is bundled with SIL OFL 1.1 license and pinned source metadata
 under `assets/fonts/`. PDF and HTML embed the font, and layout uses its measured
@@ -183,7 +184,9 @@ widescreen geometry, slide count and embedded chart workbooks. For
 `section_first_v1`, all three formats also carry an embedded binding for the
 manifest's template, SDK, source identity, hashes, format, count and layout
 font. The inspector verifies the section-first HTML reading order and the
-ordered PPTX slide, chart, workbook, notes and navigation references. Existing
+ordered PPTX slide, chart, workbook, notes and navigation references.
+It checks editable heading text in its own shape, chart element nesting, and
+the complete table record in the speaker-notes body for each table preview. Existing
 `executive_v1` artifacts continue to use their historical inspection profile.
 An embedded binding is an integrity check against the supplied manifest.
 The inspector

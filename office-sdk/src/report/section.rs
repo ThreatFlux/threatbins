@@ -11,6 +11,11 @@ const LINE_PADDING: f64 = 4.0;
 const CELL_INSET: f64 = 4.0;
 const COMPACT_CELL_INSET: f64 = 2.0;
 
+pub(super) const TABLE_PREVIEW_PREFIX: &str = "office-report-table-preview-v1:";
+pub(super) const TABLE_PREVIEW_CAPTION_SUFFIX: &str =
+    " rows shown. Complete table in speaker notes.";
+pub(super) const TABLE_PREVIEW_SIZE: f64 = 10.0;
+
 #[derive(Clone, Copy)]
 pub(super) struct Frame {
     pub x: f64,
@@ -23,6 +28,7 @@ pub(super) struct Slide<'a> {
     pub id: &'a str,
     pub items: Vec<(Frame, Item<'a>)>,
     pub notes: String,
+    pub table_previews: Vec<String>,
     pub row_ids: Vec<&'a str>,
 }
 
@@ -35,6 +41,7 @@ pub(super) enum Item<'a> {
         color: &'static str,
     },
     Table(Table),
+    TablePreview(Vec<String>),
     Chart {
         chart: &'a ReportChart,
         show_categories: bool,
@@ -70,6 +77,7 @@ impl Item<'_> {
     fn height(&self) -> f64 {
         match self {
             Self::Text { lines, size, .. } => text_height(lines.len(), *size),
+            Self::TablePreview(lines) => text_height(lines.len(), TABLE_PREVIEW_SIZE),
             Self::Table(table) => std::iter::once(&table.headers)
                 .chain(&table.rows)
                 .map(|row| table.row_height(row))
@@ -226,16 +234,14 @@ fn measure_block<'a>(
             }
             items.push(Item::Table(measure_table(table, metrics, style)?));
             if let Some(visible) = style.preview_rows.filter(|n| *n < table.rows.len()) {
-                items.push(measured_text(
-                    metrics,
+                items.push(Item::TablePreview(metrics.wrap(
                     &format!(
-                        "{visible} of {} rows shown. Complete table in speaker notes.",
+                        "{visible} of {}{TABLE_PREVIEW_CAPTION_SUFFIX}",
                         table.rows.len()
                     ),
-                    10.0,
-                    width,
-                    None,
-                )?);
+                    TABLE_PREVIEW_SIZE,
+                    width * 0.95,
+                )?));
             }
             items
         }
@@ -290,7 +296,7 @@ fn measure_block<'a>(
             items
         }
     };
-    let height = items.iter().map(Item::height).sum::<f64>() + BLOCK_GAP;
+    let height = items.iter().map(Item::height).sum();
     Ok(Block { items, height })
 }
 
@@ -301,7 +307,10 @@ fn place<'a>(
     mut y: f64,
     width: f64,
 ) {
-    for block in blocks {
+    for (index, block) in blocks.into_iter().enumerate() {
+        if index > 0 {
+            y += BLOCK_GAP;
+        }
         for item in block.items {
             let height = item.height();
             items.push((
@@ -315,7 +324,6 @@ fn place<'a>(
             ));
             y += height;
         }
-        y += BLOCK_GAP;
     }
 }
 
@@ -336,7 +344,9 @@ fn fit_columns<'a>(
             .collect::<ReportResult<Vec<_>>>()
     };
     let blocks = measure(style)?;
-    if blocks.iter().map(|b| b.height).sum::<f64>() <= available {
+    let occupied = blocks.iter().map(|b| b.height).sum::<f64>()
+        + BLOCK_GAP * blocks.len().saturating_sub(1) as f64;
+    if occupied <= available {
         let mut items = Vec::new();
         place(&mut items, blocks, LEFT, top, BODY_WIDTH);
         return Ok(Some(items));
@@ -346,14 +356,16 @@ fn fit_columns<'a>(
     }
     let width = (BODY_WIDTH - COLUMN_GAP) / 2.0;
     let mut blocks = measure(style.with_width(width))?;
-    let total: f64 = blocks.iter().map(|b| b.height).sum();
+    // Each prefix charges a gap per block. Both columns have at least one
+    // block, so remove the last gap from the taller column's height.
+    let total: f64 = blocks.iter().map(|b| b.height + BLOCK_GAP).sum();
     let split = blocks
         .iter()
         .enumerate()
         .take(blocks.len() - 1)
         .scan(0.0, |left, (index, block)| {
-            *left += block.height;
-            Some((index + 1, left.max(total - *left)))
+            *left += block.height + BLOCK_GAP;
+            Some((index + 1, left.max(total - *left) - BLOCK_GAP))
         })
         .filter(|(_, height)| *height <= available)
         .min_by(|a, b| a.1.total_cmp(&b.1));
@@ -407,6 +419,9 @@ fn fit_grid<'a>(
         }
         if top > bottom {
             return Ok(None);
+        }
+        if blocks.peek().is_some() {
+            top += BLOCK_GAP;
         }
     }
     Ok(Some(items))
@@ -516,17 +531,23 @@ pub(super) fn layout<'a>(
             write_context(&mut notes, document, digest);
         }
         let mut anchors = Vec::new();
+        let mut table_previews = Vec::new();
         for block in &section.blocks {
             match block {
                 ReportBlock::AnchoredTable { table, row_ids } => {
                     anchors.extend(row_ids.iter().map(String::as_str));
-                    if preview_rows.is_some_and(|visible| visible < table.rows.len()) {
-                        write_table_notes(&mut notes, table, Some(row_ids));
+                    if let Some(visible) = preview_rows.filter(|count| *count < table.rows.len()) {
+                        table_previews.push(write_table_notes(
+                            &mut notes,
+                            table,
+                            Some(row_ids),
+                            visible,
+                        ));
                     }
                 }
                 ReportBlock::Table { table } => {
-                    if preview_rows.is_some_and(|visible| visible < table.rows.len()) {
-                        write_table_notes(&mut notes, table, None);
+                    if let Some(visible) = preview_rows.filter(|count| *count < table.rows.len()) {
+                        table_previews.push(write_table_notes(&mut notes, table, None, visible));
                     }
                 }
                 ReportBlock::Chart { chart } => write_chart_notes(&mut notes, chart),
@@ -537,6 +558,7 @@ pub(super) fn layout<'a>(
             id: &section.id,
             items,
             notes,
+            table_previews,
             row_ids: anchors,
         });
     }
@@ -561,25 +583,38 @@ fn write_context(notes: &mut String, d: &ReportDocument, digest: &str) {
     }
 }
 
-fn write_table_notes(notes: &mut String, table: &ReportTable, row_ids: Option<&[String]>) {
-    writeln!(
-        notes,
-        "\nComplete table: {}\nRows: {}",
-        table.caption,
-        table.rows.len()
-    )
-    .unwrap();
+fn write_table_notes(
+    notes: &mut String,
+    table: &ReportTable,
+    row_ids: Option<&[String]>,
+    visible: usize,
+) -> String {
+    let total = table.rows.len();
+    let columns = table.headers.len();
+    let mut record = format!("Complete table: {}\nRows: {total}\n", table.caption);
     for (index, row) in table.rows.iter().enumerate() {
         let number = index + 1;
         if let Some(ids) = row_ids {
-            writeln!(notes, "Row {number} ({})", ids[index]).unwrap();
+            writeln!(record, "Row {number} ({})", ids[index]).unwrap();
         } else {
-            writeln!(notes, "Row {number}").unwrap();
+            writeln!(record, "Row {number}").unwrap();
         }
         for (header, cell) in table.headers.iter().zip(row) {
-            writeln!(notes, "{header}: {cell}").unwrap();
+            writeln!(record, "{header}: {cell}").unwrap();
         }
     }
+    // Match XML 1.0 line-ending normalization before binding the exact text.
+    let record = record.replace("\r\n", "\n").replace('\r', "\n");
+    let record = record.strip_suffix('\n').unwrap();
+    notes.push('\n');
+    let start = notes.bytes().filter(|byte| *byte == b'\n').count();
+    let length = record.split('\n').count();
+    notes.push_str(record);
+    notes.push('\n');
+    format!(
+        "{TABLE_PREVIEW_PREFIX}{visible}:{total}:{columns}:{start}:{length}:{}",
+        sha256(record.as_bytes())
+    )
 }
 
 fn write_chart_notes(notes: &mut String, chart: &ReportChart) {

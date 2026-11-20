@@ -30,11 +30,8 @@ pub(crate) fn render(
         context(&mut h, d, "h1");
     }
     for (index, section) in d.sections.iter().enumerate() {
-        let heading = if binding.is_some() && index == 0 {
-            "h1"
-        } else {
-            "h2"
-        };
+        let opening = binding.is_some() && index == 0;
+        let (heading, chart_heading) = if opening { ("h1", "h2") } else { ("h2", "h3") };
         write!(
             h,
             "<section id=\"{}\"><{heading}>{}</{heading}>",
@@ -67,7 +64,7 @@ pub(crate) fn render(
                 ReportBlock::Chart { chart: c } => {
                     write!(
                         h,
-                        "<figure><figcaption><h3>{}</h3><p>{}</p><p>{}</p></figcaption>",
+                        "<figure><figcaption><{chart_heading}>{}</{chart_heading}><p>{}</p><p>{}</p></figcaption>",
                         e(&c.title),
                         e(&c.description),
                         e(&chart_context(c))
@@ -101,7 +98,7 @@ pub(crate) fn render(
             }
         }
         h.push_str("</section>");
-        if binding.is_some() && index == 0 {
+        if opening {
             context(&mut h, d, "h2");
         }
     }

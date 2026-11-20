@@ -274,6 +274,282 @@ fn xml_elements(data: &[u8], names: &[&str]) -> ReportResult<Vec<(String, Attrib
     }
 }
 
+// Keep the exact ancestor chain for the section-first structures whose
+// meaning depends on where the element occurs.
+fn walk_report_xml<'a>(
+    data: &'a [u8],
+    mut visit: impl FnMut(&[String], quick_xml::events::Event<'a>) -> ReportResult<()>,
+) -> ReportResult<()> {
+    use quick_xml::{events::Event, name::ResolveResult};
+    let mut reader = quick_xml::NsReader::from_reader(data);
+    let mut parents = Vec::new();
+    let mut root_seen = false;
+    loop {
+        let event = reader.read_event().map_err(crate::OfficeError::from)?;
+        match &event {
+            Event::Start(element) | Event::Empty(element) => {
+                if parents.is_empty() && std::mem::replace(&mut root_seen, true) {
+                    return Err(invalid("pptx", "multiple report XML roots"));
+                }
+                let name = element.name();
+                let namespace = match name.as_ref().split_once(':').map(|(prefix, _)| prefix) {
+                    Some("p") => "http://schemas.openxmlformats.org/presentationml/2006/main",
+                    Some("a") => "http://schemas.openxmlformats.org/drawingml/2006/main",
+                    Some("c") => "http://schemas.openxmlformats.org/drawingml/2006/chart",
+                    _ => "",
+                };
+                let (actual, _) = reader.resolver().resolve_element(name);
+                if !namespace.is_empty()
+                    && !matches!(actual, ResolveResult::Bound(uri) if uri.as_ref() == namespace)
+                {
+                    return Err(invalid("pptx", "unexpected OOXML element namespace"));
+                }
+                if matches!(event, Event::Start(_)) {
+                    if parents.len() >= 128 {
+                        return Err(ReportError::LimitExceeded("report XML nesting".into()));
+                    }
+                    let name = name.as_ref().to_owned();
+                    visit(&parents, event)?;
+                    parents.push(name);
+                    continue;
+                }
+            }
+            Event::End(_) => {
+                parents.pop();
+            }
+            Event::Eof => {
+                return if root_seen && parents.is_empty() {
+                    Ok(())
+                } else {
+                    Err(invalid("pptx", "incomplete report XML"))
+                };
+            }
+            _ => {}
+        }
+        visit(&parents, event)?;
+    }
+}
+
+fn node_attribute(
+    element: &quick_xml::events::BytesStart<'_>,
+    key: &str,
+) -> ReportResult<Option<String>> {
+    element
+        .try_get_attribute(key)
+        .map_err(|_| invalid("pptx", "invalid attribute"))?
+        .map(|attribute| {
+            attribute
+                .normalized_value(quick_xml::XmlVersion::Explicit1_0)
+                .map(|value| value.into_owned())
+                .map_err(|error| ReportError::from(crate::OfficeError::from(error)))
+        })
+        .transpose()
+}
+
+#[derive(Default)]
+struct ShapeText {
+    id: Option<String>,
+    description: Option<String>,
+    text_box: bool,
+    notes_body: bool,
+    paragraphs: Vec<String>,
+}
+
+fn report_shape_text(data: &[u8], root: &str) -> ReportResult<Vec<ShapeText>> {
+    use quick_xml::events::Event;
+    let base = [root, "p:cSld", "p:spTree"];
+    let mut shapes = Vec::new();
+    let mut current = None;
+    walk_report_xml(data, |parents, event| {
+        if parents == base {
+            match event {
+                Event::Start(e) if e.name().as_ref() == "p:sp" => {
+                    current = Some(ShapeText::default());
+                }
+                Event::End(e) if e.name().as_ref() == "p:sp" => {
+                    shapes.extend(current.take());
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+        let Some(shape) = &mut current else {
+            return Ok(());
+        };
+        let path = &parents[base.len()..];
+        let opens = matches!(&event, Event::Start(_));
+        match event {
+            Event::Start(element) | Event::Empty(element) => match element.name().as_ref() {
+                "p:cNvPr" if path == ["p:sp", "p:nvSpPr"] => {
+                    shape.id = node_attribute(&element, "id")?;
+                    shape.description = node_attribute(&element, "descr")?;
+                }
+                "p:cNvSpPr" if path == ["p:sp", "p:nvSpPr"] => {
+                    shape.text_box = matches!(
+                        node_attribute(&element, "txBox")?.as_deref(),
+                        Some("1" | "true")
+                    );
+                }
+                "p:ph" if path == ["p:sp", "p:nvSpPr", "p:nvPr"] => {
+                    shape.notes_body = node_attribute(&element, "type")?.as_deref() == Some("body")
+                        && node_attribute(&element, "idx")?.as_deref() == Some("1");
+                }
+                "a:p" if path == ["p:sp", "p:txBody"] && (opens || root == "p:notes") => {
+                    shape.paragraphs.push(String::new());
+                }
+                _ => {}
+            },
+            text if path == ["p:sp", "p:txBody", "a:p", "a:r", "a:t"] => {
+                let Some(paragraph) = shape.paragraphs.last_mut() else {
+                    return Ok(());
+                };
+                match text {
+                    Event::Text(text) => paragraph.push_str(&crate::utils::decode_xml_text(&text)?),
+                    Event::GeneralRef(reference) => {
+                        paragraph.push_str(&crate::utils::decode_xml_reference(&reference)?)
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    })?;
+    Ok(shapes)
+}
+
+fn inspect_slide_text(slide: &[u8], notes: &[u8]) -> ReportResult<()> {
+    let shapes = report_shape_text(slide, "p:sld")?;
+    let mut headings = shapes
+        .iter()
+        .filter(|shape| shape.id.as_deref() == Some("2"));
+    let heading = headings.next();
+    if headings.next().is_some()
+        || !heading.is_some_and(|shape| {
+            shape.text_box
+                && shape.paragraphs.iter().any(|paragraph| {
+                    paragraph.chars().any(|c| {
+                        !c.is_whitespace()
+                            && !c.is_control()
+                            && !matches!(c, '\u{200b}'..='\u{200f}' | '\u{2060}' | '\u{feff}')
+                    })
+                })
+        })
+    {
+        return Err(invalid("pptx", "section slide has no editable heading"));
+    }
+
+    let previews = shapes
+        .iter()
+        .filter_map(|shape| {
+            let text = shape.paragraphs.join(" ");
+            let marker = shape
+                .description
+                .as_deref()
+                .and_then(|description| description.strip_prefix(section::TABLE_PREVIEW_PREFIX));
+            let is_banner = text
+                .strip_suffix(section::TABLE_PREVIEW_CAPTION_SUFFIX)
+                .and_then(|counts| counts.split_once(" of "))
+                .is_some_and(|(visible, total)| {
+                    visible.parse::<usize>().is_ok() && total.parse::<usize>().is_ok()
+                });
+            (marker.is_some() || is_banner).then_some((text, marker))
+        })
+        .collect::<Vec<_>>();
+    if previews.is_empty() {
+        return Ok(());
+    }
+    let notes = report_shape_text(notes, "p:notes")?;
+    let mut bodies = notes.iter().filter(|shape| shape.notes_body);
+    let Some(body) = bodies.next().filter(|_| bodies.next().is_none()) else {
+        return Err(invalid(
+            "pptx",
+            "table preview requires a unique notes body",
+        ));
+    };
+    let mut previous_end = 0;
+    for (text, marker) in previews {
+        previous_end = inspect_table_preview(&body.paragraphs, &text, marker, previous_end)?;
+    }
+    Ok(())
+}
+
+fn inspect_table_preview(
+    paragraphs: &[String],
+    text: &str,
+    marker: Option<&str>,
+    previous_end: usize,
+) -> ReportResult<usize> {
+    let error = || {
+        invalid(
+            "pptx",
+            "table preview does not match its complete table in speaker notes",
+        )
+    };
+    let mut fields = marker.ok_or_else(error)?.split(':');
+    let (visible, total, columns, start, length) = (
+        fields
+            .next()
+            .and_then(|v| v.parse::<usize>().ok())
+            .ok_or_else(error)?,
+        fields
+            .next()
+            .and_then(|v| v.parse::<usize>().ok())
+            .ok_or_else(error)?,
+        fields
+            .next()
+            .and_then(|v| v.parse::<usize>().ok())
+            .ok_or_else(error)?,
+        fields
+            .next()
+            .and_then(|v| v.parse::<usize>().ok())
+            .ok_or_else(error)?,
+        fields
+            .next()
+            .and_then(|v| v.parse::<usize>().ok())
+            .ok_or_else(error)?,
+    );
+    let digest = fields.next().ok_or_else(error)?;
+    let end = start.checked_add(length).ok_or_else(error)?;
+    let record = paragraphs.get(start..end).ok_or_else(error)?;
+    let row_count = format!("Rows: {total}");
+    let mut rows = record.iter();
+    if fields.next().is_some()
+        || visible >= total
+        || total > ReportLimits::default().max_table_rows
+        || !(1..=8).contains(&columns)
+        || start < previous_end
+        || length < 2 + total * (1 + columns)
+        || text
+            != format!(
+                "{visible} of {total}{}",
+                section::TABLE_PREVIEW_CAPTION_SUFFIX
+            )
+        || !record
+            .first()
+            .is_some_and(|line| line.starts_with("Complete table: "))
+        || !rows.any(|line| line == &row_count)
+        || sha256(record.join("\n").as_bytes()) != digest
+    {
+        return Err(error());
+    }
+    for number in 1..=total {
+        let expected = format!("Row {number}");
+        if !rows.any(|line| {
+            line.strip_prefix(&expected)
+                .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with(" ("))
+        }) {
+            return Err(error());
+        }
+        for _ in 0..columns {
+            if !rows.any(|line| line.contains(": ")) {
+                return Err(error());
+            }
+        }
+    }
+    Ok(end)
+}
+
 fn part<'a>(parts: &'a BTreeMap<String, Vec<u8>>, path: &str) -> ReportResult<&'a [u8]> {
     parts
         .get(path)
@@ -375,15 +651,11 @@ fn inspect_section_deck(
                 "section notes reverse relationship mismatch",
             ));
         }
-        let elements = xml_elements(
-            part(parts, &format!("ppt/{target}"))?,
-            &["p:sp", "a:t", "a:tbl", "c:chart", "a:hlinkClick"],
-        )?;
-        let has = |name| elements.iter().any(|(element, _)| element == name);
-        if !has("p:sp") || !has("a:t") {
-            return Err(invalid("pptx", "section slide has no editable heading"));
-        }
-        tables |= has("a:tbl");
+        let slide = part(parts, &format!("ppt/{target}"))?;
+        let notes_body = part(parts, &format!("ppt/notesSlides/notesSlide{number}.xml"))?;
+        inspect_slide_text(slide, notes_body)?;
+        let elements = xml_elements(slide, &["a:tbl", "c:chart", "a:hlinkClick"])?;
+        tables |= elements.iter().any(|(element, _)| element == "a:tbl");
         for (element, attrs) in &elements {
             match element.as_str() {
                 "a:hlinkClick" => {
@@ -427,24 +699,50 @@ fn inspect_section_deck(
 }
 
 fn inspect_chart_binding(parts: &BTreeMap<String, Vec<u8>>, name: &str) -> ReportResult<()> {
-    let elements = xml_elements(
-        part(parts, &format!("ppt/charts/{name}.xml"))?,
-        &["c:lineChart", "c:dispBlanksAs", "c:externalData"],
-    )?;
-    let [(line, _), (gap, gap_attrs), (data, data_attrs)] = elements.as_slice() else {
+    use quick_xml::events::Event;
+    let chart = part(parts, &format!("ppt/charts/{name}.xml"))?;
+    let mut counts = [0; 6];
+    walk_report_xml(chart, |parents, event| {
+        let opens = matches!(&event, Event::Start(_));
+        let (Event::Start(element) | Event::Empty(element)) = event else {
+            return Ok(());
+        };
+        let (index, required): (usize, &[&str]) = match element.name().as_ref() {
+            "c:chartSpace" => (0, &[]),
+            "c:chart" => (1, &["c:chartSpace"]),
+            "c:plotArea" => (2, &["c:chartSpace", "c:chart"]),
+            "c:lineChart" => (3, &["c:chartSpace", "c:chart", "c:plotArea"]),
+            "c:dispBlanksAs" => (4, &["c:chartSpace", "c:chart"]),
+            "c:externalData" => (5, &["c:chartSpace"]),
+            _ => return Ok(()),
+        };
+        if parents != required || (index < 4 && !opens) {
+            return Err(invalid("pptx", "unexpected native chart element position"));
+        }
+        counts[index] += 1;
+        Ok(())
+    })?;
+    if counts != [1; 6] {
         return Err(invalid(
             "pptx",
-            "missing native line chart, gap mode or workbook link",
+            "missing or duplicate native chart structure",
+        ));
+    }
+    // Also check the relationship attribute namespace and the explicit gap value.
+    let elements = xml_elements(chart, &["c:dispBlanksAs", "c:externalData"])?;
+    let [(gap, gap_attrs), (data, data_attrs)] = elements.as_slice() else {
+        return Err(invalid(
+            "pptx",
+            "missing native chart gap mode or workbook link",
         ));
     };
-    if line != "c:lineChart"
-        || gap != "c:dispBlanksAs"
+    if gap != "c:dispBlanksAs"
         || data != "c:externalData"
         || gap_attrs.get("val").map(String::as_str) != Some("gap")
     {
         return Err(invalid(
             "pptx",
-            "missing native line chart, gap mode or workbook link",
+            "missing native chart gap mode or workbook link",
         ));
     }
     let rels = relationships(parts, &format!("ppt/charts/_rels/{name}.xml.rels"))?;
@@ -672,6 +970,73 @@ fn read_package(
     Ok(parts)
 }
 
+#[derive(Default)]
+struct HtmlReadingOrder {
+    stack: Vec<String>,
+    main_seen: bool,
+    opening_seen: bool,
+    in_opening: bool,
+}
+
+impl HtmlReadingOrder {
+    fn start(&mut self, tag: &str, opens: bool) -> ReportResult<()> {
+        let parent = self.stack.last().map(String::as_str);
+        if tag == "main" {
+            if self.main_seen || !opens || parent != Some("body") {
+                return Err(invalid("html", "invalid report main"));
+            }
+            self.main_seen = true;
+        }
+        if tag == "section" && !self.stack.iter().any(|name| name == "main") {
+            return Err(invalid("html", "report section is outside main"));
+        }
+        if parent == Some("main") && !self.opening_seen {
+            if tag != "section" || !opens {
+                return Err(invalid("html", "first reading section is missing"));
+            }
+            self.opening_seen = true;
+            self.in_opening = true;
+        }
+        if parent == Some("figcaption")
+            && matches!(tag, "h1" | "h2" | "h3")
+            && tag != if self.in_opening { "h2" } else { "h3" }
+        {
+            return Err(invalid("html", "incorrect chart heading level"));
+        }
+        if opens && tag != "meta" {
+            if self.stack.len() >= 128 {
+                return Err(ReportError::LimitExceeded("HTML nesting".into()));
+            }
+            self.stack.push(tag.into());
+        }
+        Ok(())
+    }
+
+    fn end(&mut self, tag: &str) -> ReportResult<()> {
+        if self.stack.pop().as_deref() != Some(tag) {
+            return Err(invalid("html", "malformed section-first reading order"));
+        }
+        if tag == "main" && !self.opening_seen {
+            return Err(invalid("html", "first reading section is missing"));
+        }
+        if tag == "section" && self.stack.last().is_some_and(|parent| parent == "main") {
+            self.in_opening = false;
+        }
+        Ok(())
+    }
+
+    fn before_opening(&self) -> bool {
+        !self.opening_seen && self.stack.last().is_some_and(|tag| tag == "main")
+    }
+
+    fn finish(self) -> ReportResult<()> {
+        if !self.main_seen || !self.opening_seen || !self.stack.is_empty() {
+            return Err(invalid("html", "first reading section is missing"));
+        }
+        Ok(())
+    }
+}
+
 fn inspect_html(html: &str, document_sha256: &str, binding: Option<&str>) -> ReportResult<()> {
     use quick_xml::events::Event;
     const CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
@@ -757,23 +1122,20 @@ fn inspect_html(html: &str, document_sha256: &str, binding: Option<&str>) -> Rep
     let mut in_head = false;
     let mut policy_seen = false;
     let mut marker = None;
-    let mut first_content = None;
-    let mut next_is_first_content = false;
+    let mut reading_order = binding.map(|_| HtmlReadingOrder::default());
     let mut ids = BTreeSet::new();
     let mut targets = Vec::new();
     loop {
-        match reader.read_event().map_err(crate::OfficeError::from)? {
+        let event = reader.read_event().map_err(crate::OfficeError::from)?;
+        let opens = matches!(&event, Event::Start(_));
+        match event {
             Event::Start(e) | Event::Empty(e) => {
                 let tag = e.name().as_ref().to_ascii_lowercase();
                 if !TAGS.contains(&tag.as_str()) {
                     return Err(invalid("html", "unsupported or active HTML element"));
                 }
-                if next_is_first_content {
-                    first_content = Some(tag.clone());
-                    next_is_first_content = false;
-                }
-                if tag == "main" && first_content.is_none() {
-                    next_is_first_content = true;
+                if let Some(reading_order) = &mut reading_order {
+                    reading_order.start(&tag, opens)?;
                 }
                 if tag == "head" {
                     in_head = true;
@@ -847,9 +1209,31 @@ fn inspect_html(html: &str, document_sha256: &str, binding: Option<&str>) -> Rep
                 }
             }
             Event::End(e) => {
-                if e.name().as_ref().eq_ignore_ascii_case("head") {
+                let tag = e.name().as_ref().to_ascii_lowercase();
+                if tag == "head" {
                     in_head = false;
                 }
+                if let Some(reading_order) = &mut reading_order {
+                    reading_order.end(&tag)?;
+                }
+            }
+            Event::Text(text)
+                if reading_order
+                    .as_ref()
+                    .is_some_and(HtmlReadingOrder::before_opening)
+                    && !text.as_ref().trim().is_empty() =>
+            {
+                return Err(invalid("html", "text precedes the first reading section"));
+            }
+            Event::GeneralRef(reference)
+                if reading_order
+                    .as_ref()
+                    .is_some_and(HtmlReadingOrder::before_opening)
+                    && !crate::utils::decode_xml_reference(&reference)?
+                        .trim()
+                        .is_empty() =>
+            {
+                return Err(invalid("html", "text precedes the first reading section"));
             }
             Event::DocType(value) if !value.as_ref().eq_ignore_ascii_case("html") => {
                 return Err(invalid("html", "unsupported doctype"));
@@ -874,8 +1258,8 @@ fn inspect_html(html: &str, document_sha256: &str, binding: Option<&str>) -> Rep
         return Err(invalid("html", "missing offline policy"));
     }
     verify_binding(marker.as_deref(), binding)?;
-    if binding.is_some() && first_content.as_deref() != Some("section") {
-        return Err(invalid("html", "first reading section is missing"));
+    if let Some(reading_order) = reading_order {
+        reading_order.finish()?;
     }
     Ok(())
 }
