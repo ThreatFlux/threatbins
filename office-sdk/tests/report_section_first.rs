@@ -633,6 +633,65 @@ fn native_heading_must_be_meaningful_text_in_the_heading_textbox() {
 }
 
 #[test]
+fn preview_caption_is_valid_prose_with_or_without_tables() {
+    const CAPTION: &str = "6 of 24 rows shown. Complete table in speaker notes.";
+    let paragraph = || ReportBlock::Paragraph {
+        text: CAPTION.into(),
+    };
+    let table = |rows| ReportBlock::Table {
+        table: ReportTable {
+            caption: String::new(),
+            headers: vec!["Observation".into()],
+            rows: (1..=rows)
+                .map(|row| vec![format!("Recorded result {row}")])
+                .collect(),
+        },
+    };
+    let mut document = fixture();
+    document.sections = vec![
+        ReportSection {
+            id: "prose".into(),
+            title: "Report prose".into(),
+            blocks: vec![paragraph()],
+        },
+        ReportSection {
+            id: "mixed".into(),
+            title: "Recorded results".into(),
+            blocks: vec![table(1), paragraph(), table(24), paragraph()],
+        },
+    ];
+    let report = render_report(&document, &options(ReportFormat::Pptx)).unwrap();
+    let inspection = inspect_report(&report.bytes, &report.manifest).unwrap();
+    assert!(inspection.native_editable_tables);
+
+    let prose = xml(&report.bytes, "ppt/slides/slide1.xml");
+    assert!(prose.contains(CAPTION));
+    assert!(!prose.contains("office-report-table-preview-v1:"));
+
+    let mixed = xml(&report.bytes, "ppt/slides/slide2.xml");
+    let captions = mixed
+        .split("<p:sp>")
+        .skip(1)
+        .map(|shape| shape.split_once("</p:sp>").unwrap().0)
+        .filter(|shape| shape.contains(CAPTION))
+        .collect::<Vec<_>>();
+    let [before, preview, after] = captions.as_slice() else {
+        panic!("expected two ordinary paragraphs and one generated preview");
+    };
+    for prose in [before, after] {
+        assert!(prose.contains(r#"name="Report text "#));
+        assert!(!prose.contains(" descr="));
+    }
+    assert!(
+        preview
+            .contains(r#"name="Report table preview" descr="office-report-table-preview-v1:6:24:"#)
+    );
+    let notes = xml(&report.bytes, "ppt/notesSlides/notesSlide2.xml");
+    assert_eq!(notes.matches("Complete table: ").count(), 1);
+    assert!(notes.contains("Observation: Recorded result 24"));
+}
+
+#[test]
 fn preview_requires_the_complete_record_in_the_native_notes_body() {
     let mut document: ReportDocument = serde_json::from_str(DENSE).unwrap();
     let ReportBlock::AnchoredTable { table, .. } = &mut document.sections[2].blocks[0] else {
@@ -676,15 +735,44 @@ fn preview_requires_the_complete_record_in_the_native_notes_body() {
         &missing_value,
         "table preview does not match its complete table",
     );
-    let removed_marker = replace_part(
+    let slide_path = "ppt/slides/slide3.xml";
+    let tampered_marker = replace_part(
         &report.bytes,
-        "ppt/slides/slide3.xml",
+        slide_path,
         "office-report-table-preview-v1:",
         "unused-preview-marker:",
     );
     assert_invalid_artifact(
         &report,
-        &removed_marker,
+        &tampered_marker,
+        "table preview does not match its complete table",
+    );
+
+    let slide = xml(&report.bytes, slide_path);
+    let name = r#"name="Report table preview""#;
+    let (_, description) = slide.split_once(name).unwrap();
+    let (attribute, _) = description.split_once("/>").unwrap();
+    assert!(attribute.starts_with(r#" descr="office-report-table-preview-v1:"#));
+    let missing_marker = replace_part(
+        &report.bytes,
+        slide_path,
+        &format!("{name}{attribute}"),
+        name,
+    );
+    assert_invalid_artifact(
+        &report,
+        &missing_marker,
+        "table preview does not match its complete table",
+    );
+    let revised_caption = replace_part(
+        &missing_marker,
+        slide_path,
+        "rows shown. Complete table in speaker notes.",
+        "recorded rows",
+    );
+    assert_invalid_artifact(
+        &report,
+        &revised_caption,
         "table preview does not match its complete table",
     );
 }

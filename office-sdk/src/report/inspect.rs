@@ -349,6 +349,7 @@ fn node_attribute(
 #[derive(Default)]
 struct ShapeText {
     id: Option<String>,
+    name: Option<String>,
     description: Option<String>,
     text_box: bool,
     notes_body: bool,
@@ -382,6 +383,7 @@ fn report_shape_text(data: &[u8], root: &str) -> ReportResult<Vec<ShapeText>> {
             Event::Start(element) | Event::Empty(element) => match element.name().as_ref() {
                 "p:cNvPr" if path == ["p:sp", "p:nvSpPr"] => {
                     shape.id = node_attribute(&element, "id")?;
+                    shape.name = node_attribute(&element, "name")?;
                     shape.description = node_attribute(&element, "descr")?;
                 }
                 "p:cNvSpPr" if path == ["p:sp", "p:nvSpPr"] => {
@@ -442,18 +444,13 @@ fn inspect_slide_text(slide: &[u8], notes: &[u8]) -> ReportResult<()> {
     let previews = shapes
         .iter()
         .filter_map(|shape| {
-            let text = shape.paragraphs.join(" ");
             let marker = shape
                 .description
                 .as_deref()
                 .and_then(|description| description.strip_prefix(section::TABLE_PREVIEW_PREFIX));
-            let is_banner = text
-                .strip_suffix(section::TABLE_PREVIEW_CAPTION_SUFFIX)
-                .and_then(|counts| counts.split_once(" of "))
-                .is_some_and(|(visible, total)| {
-                    visible.parse::<usize>().is_ok() && total.parse::<usize>().is_ok()
-                });
-            (marker.is_some() || is_banner).then_some((text, marker))
+            // The shape name still identifies a preview when its binding is damaged.
+            (shape.name.as_deref() == Some(pptx::TABLE_PREVIEW_SHAPE_NAME) || marker.is_some())
+                .then_some((shape, marker))
         })
         .collect::<Vec<_>>();
     if previews.is_empty() {
@@ -468,7 +465,8 @@ fn inspect_slide_text(slide: &[u8], notes: &[u8]) -> ReportResult<()> {
         ));
     };
     let mut previous_end = 0;
-    for (text, marker) in previews {
+    for (shape, marker) in previews {
+        let text = shape.paragraphs.join(" ");
         previous_end = inspect_table_preview(&body.paragraphs, &text, marker, previous_end)?;
     }
     Ok(())

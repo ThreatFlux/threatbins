@@ -13,6 +13,8 @@ use std::{
 };
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 pub(super) const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+pub(super) const TABLE_PREVIEW_SHAPE_NAME: &str = "Report table preview";
+
 struct ChartPart<'a> {
     slide: usize,
     number: usize,
@@ -168,6 +170,7 @@ pub(super) fn render_sections(
                         *size,
                         color,
                         section::line_height(*size),
+                        None,
                     );
                     if let Some(target) = target {
                         let relation = format!("rIdNavigation{shape}");
@@ -191,24 +194,17 @@ pub(super) fn render_sections(
                     ));
                 }
                 Item::TablePreview(lines) => {
-                    let description = previews
+                    let binding = previews
                         .next()
                         .ok_or_else(|| invalid("pptx", "missing table preview binding"))?;
-                    let label = text_frame(
+                    shapes.push_str(&text_frame(
                         shape,
                         lines,
                         *frame,
                         section::TABLE_PREVIEW_SIZE,
                         "172033",
                         section::line_height(section::TABLE_PREVIEW_SIZE),
-                    );
-                    shapes.push_str(&label.replacen(
-                        &format!(r#"name="Report text {shape}""#),
-                        &format!(
-                            r#"name="Report table preview" descr="{}""#,
-                            xml(description)
-                        ),
-                        1,
+                        Some(binding),
                     ));
                 }
                 Item::Chart {
@@ -461,6 +457,7 @@ fn textbox(
         size,
         color,
         if size <= 12.0 { 16.0 } else { 26.0 },
+        None,
     )
 }
 
@@ -471,9 +468,17 @@ fn text_frame(
     size: f64,
     color: &str,
     spacing: f64,
+    preview_binding: Option<&str>,
 ) -> String {
+    let metadata = match preview_binding {
+        Some(binding) => format!(
+            r#"name="{TABLE_PREVIEW_SHAPE_NAME}" descr="{}""#,
+            xml(binding)
+        ),
+        None => format!(r#"name="Report text {id}""#),
+    };
     format!(
-        "<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"Report text {id}\"/><p:cNvSpPr txBox=\"1\"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"{}\" y=\"{}\"/><a:ext cx=\"{}\" cy=\"{}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap=\"none\" lIns=\"0\" tIns=\"0\" rIns=\"0\" bIns=\"0\"/><a:lstStyle/>{}</p:txBody></p:sp>",
+        "<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" {metadata}/><p:cNvSpPr txBox=\"1\"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"{}\" y=\"{}\"/><a:ext cx=\"{}\" cy=\"{}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap=\"none\" lIns=\"0\" tIns=\"0\" rIns=\"0\" bIns=\"0\"/><a:lstStyle/>{}</p:txBody></p:sp>",
         emu(frame.x),
         emu(frame.y),
         emu(frame.width),
