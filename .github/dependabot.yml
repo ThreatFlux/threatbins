@@ -1,29 +1,27 @@
 version: 2
+multi-ecosystem-groups:
+  nightly-dependencies:
+    schedule:
+      interval: cron
+      cronjob: "0 6 * * *"
+      timezone: UTC
+    commit-message:
+      prefix: chore
+
 updates:
   - package-ecosystem: cargo
-    directory: /office-sdk
-    schedule:
-      interval: cron
-      cronjob: "0 6 * * *"
-      timezone: UTC
-
-  - package-ecosystem: cargo
-    directory: /api-test
-    schedule:
-      interval: cron
-      cronjob: "0 6 * * *"
-      timezone: UTC
+    directories:
+      - /office-sdk
+      - /api-test
+    patterns: ["*"]
+    multi-ecosystem-group: nightly-dependencies
 
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: cron
-      cronjob: "0 6 * * *"
-      timezone: UTC
+    patterns: ["*"]
+    multi-ecosystem-group: nightly-dependencies
 
   - package-ecosystem: nuget
     directory: /tools/pptx-validation
-    schedule:
-      interval: cron
-      cronjob: "0 6 * * *"
-      timezone: UTC
+    patterns: ["*"]
+    multi-ecosystem-group: nightly-dependencies
