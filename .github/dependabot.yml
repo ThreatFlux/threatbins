@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /office-sdk
+    schedule:
+      interval: cron
+      cronjob: "0 6 * * *"
+      timezone: UTC
+
+  - package-ecosystem: cargo
+    directory: /api-test
+    schedule:
+      interval: cron
+      cronjob: "0 6 * * *"
+      timezone: UTC
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: cron
+      cronjob: "0 6 * * *"
+      timezone: UTC
+
+  - package-ecosystem: nuget
+    directory: /tools/pptx-validation
+    schedule:
+      interval: cron
+      cronjob: "0 6 * * *"
+      timezone: UTC

@@ -26,7 +26,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-office-sdk = { git = "https://github.com/ThreatFlux/threatbins", tag = "office-sdk-v0.5.0" }
+office-sdk = { git = "https://github.com/ThreatFlux/threatbins", tag = "office-sdk-v0.5.1" }
 ```
 
 Version 0.5 adds the opt-in `section_first_v1` report template for schema-1
